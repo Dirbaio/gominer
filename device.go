@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"unsafe"
@@ -16,9 +17,9 @@ const (
 	localWorksize    = 64
 	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
 
-	nonceWord         = 3
-	deviceCounterWord = 4
-	deviceIndexWord   = 5
+	nonce0Word = 3
+	nonce1Word = 4
+	nonce2Word = 5
 )
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
@@ -51,6 +52,11 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t) {
 	return program_buffer[:], program_size[:]
 }
 
+type Work struct {
+	Data   [192]byte
+	Target [32]byte
+}
+
 type Device struct {
 	index        int
 	platformID   cl.CL_platform_id
@@ -64,15 +70,35 @@ type Device struct {
 	midstate  [8]uint32
 	lastBlock [16]uint32
 
+	work     Work
+	newWork  chan *Work
+	workDone chan []byte
+	hasWork  bool
+
 	quit chan struct{}
 }
 
-func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id) (*Device, error) {
+// Compares a and b as big endian
+func hashSmaller(a, b []byte) bool {
+	for i := len(a) - 1; i >= 0; i-- {
+		if a[i] < b[i] {
+			return true
+		}
+		if a[i] > b[i] {
+			return false
+		}
+	}
+	return false
+}
+
+func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id, workDone chan []byte) (*Device, error) {
 	d := &Device{
 		index:      index,
 		platformID: platformID,
 		deviceID:   deviceID,
 		quit:       make(chan struct{}),
+		newWork:    make(chan *Work, 5),
+		workDone:   workDone,
 	}
 
 	var status cl.CL_int
@@ -139,18 +165,61 @@ func (d *Device) Release() {
 	cl.CLReleaseContext(d.context)
 }
 
+func (d *Device) updateCurrentWork() {
+	var w *Work
+	if d.hasWork {
+		// If we already have work, we just need to check if there's new one
+		// without blocking if there's not.
+		select {
+		case w = <-d.newWork:
+		default:
+			return
+		}
+	} else {
+		// If we don't have work, we block until we do. We need to watch for
+		// quit events too.
+		select {
+		case w = <-d.newWork:
+		case <-d.quit:
+			return
+		}
+	}
+
+	d.hasWork = true
+
+	d.work = *w
+
+	// Set nonce2
+	binary.BigEndian.PutUint32(d.work.Data[128+4*nonce2Word:], uint32(d.index))
+
+	// Reset the hash state
+	copy(d.midstate[:], blake256.IV256[:])
+
+	// Hash the two first blocks
+	blake256.Block(d.midstate[:], d.work.Data[0:64], 512)
+	blake256.Block(d.midstate[:], d.work.Data[64:128], 1024)
+
+	// Convert the next block to uint32 array.
+	for i := 0; i < 16; i++ {
+		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4:])
+	}
+}
+
 func (d *Device) Run() {
 	println("Started GPU #", d.index)
 	outputData := make([]uint32, outputBufferSize)
 	var status cl.CL_int
 	for {
+		d.updateCurrentWork()
+
 		select {
 		case <-d.quit:
 			return
 		default:
 		}
 
-		d.lastBlock[deviceCounterWord]++
+		// Increment nonce1
+		d.lastBlock[nonce1Word]++
 
 		// arg 0: pointer to the buffer
 		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(d.outputBuffer)), unsafe.Pointer(&d.outputBuffer))
@@ -167,7 +236,7 @@ func (d *Device) Run() {
 		// args 9..20: lastBlock except nonce
 		i2 := 0
 		for i := 0; i < 12; i++ {
-			if i2 == nonceWord {
+			if i2 == nonce0Word {
 				i2++
 			}
 			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&d.lastBlock[i2]))
@@ -205,26 +274,38 @@ func (d *Device) Run() {
 		}
 
 		for i := uint32(0); i < outputData[0]; i++ {
-			println("FOUND!", outputData[i+1])
+			d.foundCandidate(d.lastBlock[nonce1Word], outputData[i+1])
 		}
 	}
 }
 
-func (d *Device) Stop() {
-	d.quit <- struct{}{}
+func (d *Device) foundCandidate(nonce1 uint32, nonce0 uint32) {
+	// Construct the final block header
+	data := make([]byte, 192)
+	copy(data, d.work.Data[:])
+	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)
+	binary.BigEndian.PutUint32(data[128+4*nonce0Word:], nonce0)
+
+	// Perform the final hash block to get the hash
+	var state [8]uint32
+	copy(state[:], d.midstate[:])
+	blake256.Block(state[:], data[128:192], 1440)
+
+	var hash [32]byte
+	for i := 0; i < 8; i++ {
+		binary.BigEndian.PutUint32(hash[i*4:], state[i])
+	}
+
+	if hashSmaller(hash[:], d.work.Target[:]) {
+		println("FOUND HASH", hex.EncodeToString(hash[:]))
+		d.workDone <- data
+	}
 }
 
-func (d *Device) SetWork(work []byte) {
-	// Reset the hash state
-	copy(d.midstate[:], blake256.IV256[:])
+func (d *Device) Stop() {
+	close(d.quit)
+}
 
-	// Hash the two first blocks
-	blake256.Block(d.midstate[:], work[0:64])
-	blake256.Block(d.midstate[:], work[64:128])
-
-	// Convert the next block to uint32 array.
-	for i := 0; i < 16; i++ {
-		d.lastBlock[i] = binary.BigEndian.Uint32(work[128+i*4:])
-	}
-	d.lastBlock[deviceIndexWord] = uint32(d.index)
+func (d *Device) SetWork(w *Work) {
+	d.newWork <- w
 }

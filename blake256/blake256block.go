@@ -38,7 +38,7 @@ var IV256 = [8]uint32{
 // from the block in 'p', assuming a zero salt.
 // h must be 8 uint32's
 // p must be 64 bytes.
-func Block(h []uint32, p []uint8) {
+func Block(h []uint32, p []uint8, t uint64) {
 	h0, h1, h2, h3, h4, h5, h6, h7 := h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]
 
 	v0, v1, v2, v3, v4, v5, v6, v7 := h0, h1, h2, h3, h4, h5, h6, h7
@@ -51,6 +51,10 @@ func Block(h []uint32, p []uint8) {
 	v13 := uint32(cst5)
 	v14 := uint32(cst6)
 	v15 := uint32(cst7)
+	v12 ^= uint32(t)
+	v13 ^= uint32(t)
+	v14 ^= uint32(t >> 32)
+	v15 ^= uint32(t >> 32)
 
 	var m [16]uint32
 
