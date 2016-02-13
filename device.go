@@ -75,6 +75,11 @@ type Device struct {
 	workDone chan []byte
 	hasWork  bool
 
+	workDoneEMA   float64
+	workDoneLast  float64
+	workDoneTotal float64
+	runningTime   float64
+
 	quit chan struct{}
 }
 
@@ -274,8 +279,12 @@ func (d *Device) Run() {
 		}
 
 		for i := uint32(0); i < outputData[0]; i++ {
+			println("candidate", outputData[i+1])
 			d.foundCandidate(d.lastBlock[nonce1Word], outputData[i+1])
 		}
+
+		d.workDoneLast += globalWorksize
+		d.workDoneTotal += globalWorksize
 	}
 }
 
@@ -308,4 +317,24 @@ func (d *Device) Stop() {
 
 func (d *Device) SetWork(w *Work) {
 	d.newWork <- w
+}
+
+func formatHashrate(h float64) string {
+	if h > 1000000000 {
+		return fmt.Sprintf("%.3f GH/s", h/1000000000)
+	} else if h > 1000000 {
+		return fmt.Sprintf("%.3f MH/s", h/1000000)
+	} else if h > 1000 {
+		return fmt.Sprintf("%.3f kH/s", h/1000)
+	} else {
+		return fmt.Sprintf("%.3f GH/s", h)
+	}
+}
+
+func (d *Device) PrintStats() {
+	alpha := 0.95
+	d.workDoneEMA = d.workDoneEMA*alpha + d.workDoneLast*(1-alpha)
+	d.workDoneLast = 0
+	d.runningTime += 1.0
+	println("EMA " + formatHashrate(d.workDoneEMA) + ", avg " + formatHashrate(d.workDoneTotal/d.runningTime))
 }

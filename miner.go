@@ -7,6 +7,8 @@ import (
 	"github.com/Dirbaio/gominer/cl"
 )
 
+const benchmark = true
+
 func getCLPlatforms() []cl.CL_platform_id {
 	var numPlatforms cl.CL_uint
 	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
@@ -72,10 +74,11 @@ func NewMiner() (*Miner, error) {
 }
 
 func (m *Miner) workSubmitThread() {
+	defer m.wg.Done()
+
 	for {
 		select {
 		case <-m.quit:
-			m.wg.Done()
 			return
 		case data := <-m.workDone:
 			accepted, err := GetWorkSubmit(data)
@@ -90,7 +93,11 @@ func (m *Miner) workSubmitThread() {
 }
 
 func (m *Miner) workRefreshThread() {
+	defer m.wg.Done()
+
 	t := time.NewTicker(time.Second)
+	defer t.Stop()
+
 	for {
 		work, err := GetWork()
 		if err != nil {
@@ -103,8 +110,26 @@ func (m *Miner) workRefreshThread() {
 
 		select {
 		case <-m.quit:
-			m.wg.Done()
-			t.Stop()
+			return
+		case <-t.C:
+		case <-m.needsWorkRefresh:
+		}
+	}
+}
+
+func (m *Miner) printStatsThread() {
+	defer m.wg.Done()
+
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+
+	for {
+		for _, d := range m.devices {
+			d.PrintStats()
+		}
+
+		select {
+		case <-m.quit:
 			return
 		case <-t.C:
 		case <-m.needsWorkRefresh:
@@ -126,8 +151,18 @@ func (m *Miner) Run() {
 
 	m.wg.Add(1)
 	go m.workSubmitThread()
+	if benchmark {
+		work := &Work{}
+		for _, d := range m.devices {
+			d.SetWork(work)
+		}
+	} else {
+		m.wg.Add(1)
+		go m.workRefreshThread()
+	}
+
 	m.wg.Add(1)
-	go m.workRefreshThread()
+	go m.printStatsThread()
 
 	m.wg.Wait()
 }
