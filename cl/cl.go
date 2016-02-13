@@ -1,5 +1,3 @@
-// +build cl11 cl12 cl20
-
 package cl
 
 /*
@@ -7,12 +5,15 @@ package cl
 #cgo !darwin LDFLAGS: -lOpenCL
 #cgo darwin LDFLAGS: -framework OpenCL
 
+#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
+#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+
 #ifdef __APPLE__
 #include "OpenCL/opencl.h"
 #else
 #include "CL/opencl.h"
 #endif
- */
+*/
 import "C"
 
 import "math"
