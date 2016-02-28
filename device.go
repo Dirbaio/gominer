@@ -144,14 +144,22 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 	compilerOptions += fmt.Sprintf(" -D WORKSIZE=%d", localWorksize)
 	status = cl.CLBuildProgram(d.program, 1, []cl.CL_device_id{deviceID}, []byte(compilerOptions), nil, nil)
 	if status != cl.CL_SUCCESS {
+		err = clError(status, "CLBuildProgram")
+
 		// Something went wrong! Print what it is.
 		var logSize cl.CL_size_t
 		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
+		if status != cl.CL_SUCCESS {
+			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
+		}
 		var program_log interface{}
 		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
+		if status != cl.CL_SUCCESS {
+			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
+		}
 		minrLog.Errorf("%s\n", program_log)
 
-		return nil, clError(status, "CLBuildProgram")
+		return nil, err
 	}
 
 	// Create the kernel
