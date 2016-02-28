@@ -32,9 +32,6 @@ type getWorkSubmitResponseJson struct {
 
 var (
 	httpClient *http.Client
-	user       = "test"
-	password   = "test"
-	url        = "http://localhost:19109/"
 )
 
 const (
@@ -62,8 +59,8 @@ func createHTTPClient() *http.Client {
 // GetWork makes a getwork RPC call and returns the result (data and target)
 func GetWork() (*Work, error) {
 	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": [], "id": 1}`)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+password)))
+	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
@@ -112,8 +109,8 @@ func GetWork() (*Work, error) {
 func GetWorkSubmit(data []byte) (bool, error) {
 	hexData := hex.EncodeToString(data)
 	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": ["` + hexData + `"], "id": 1}`)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+password)))
+	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)

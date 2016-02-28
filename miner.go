@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,37 +10,33 @@ import (
 
 const benchmark = true
 
-func getCLPlatforms() []cl.CL_platform_id {
+func getCLPlatforms() ([]cl.CL_platform_id, error) {
 	var numPlatforms cl.CL_uint
 	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
 	if status != cl.CL_SUCCESS {
-		println("CLGetPlatformIDs status!=cl.CL_SUCCESS")
-		return nil
+		return nil, clError(status, "CLGetPlatformIDs")
 	}
 	platforms := make([]cl.CL_platform_id, numPlatforms)
 	status = cl.CLGetPlatformIDs(numPlatforms, platforms, nil)
 	if status != cl.CL_SUCCESS {
-		println("CLGetPlatformIDs status!=cl.CL_SUCCESS")
-		return nil
+		return nil, clError(status, "CLGetPlatformIDs")
 	}
-	return platforms
+	return platforms, nil
 }
 
 // getCLDevices returns the list of devices for the given platform.
-func getCLDevices(platform cl.CL_platform_id) []cl.CL_device_id {
+func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
 	var numDevices cl.CL_uint
 	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil, &numDevices)
 	if status != cl.CL_SUCCESS {
-		println("CLGetDeviceIDs status!=cl.CL_SUCCESS")
-		return nil
+		return nil, clError(status, "CLGetDeviceIDs")
 	}
 	devices := make([]cl.CL_device_id, numDevices)
 	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices, devices, nil)
 	if status != cl.CL_SUCCESS {
-		println("CLGetDeviceIDs status!=cl.CL_SUCCESS")
-		return nil
+		return nil, clError(status, "CLGetDeviceIDs")
 	}
-	return devices
+	return devices, nil
 }
 
 type Miner struct {
@@ -57,9 +54,15 @@ func NewMiner() (*Miner, error) {
 		needsWorkRefresh: make(chan struct{}),
 	}
 
-	platformIDs := getCLPlatforms()
+	platformIDs, err := getCLPlatforms()
+	if err != nil {
+		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
+	}
 	platformID := platformIDs[0]
-	deviceIDs := getCLDevices(platformID)
+	deviceIDs, err := getCLDevices(platformID)
+	if err != nil {
+		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+	}
 
 	m.devices = make([]*Device, len(deviceIDs))
 	for i, deviceID := range deviceIDs {
@@ -83,9 +86,9 @@ func (m *Miner) workSubmitThread() {
 		case data := <-m.workDone:
 			accepted, err := GetWorkSubmit(data)
 			if err != nil {
-				println("Error submitting work:", err.Error())
+				minrLog.Errorf("Error submitting work: %v", err)
 			} else {
-				println("Submitted work, accepted:", accepted)
+				minrLog.Errorf("Submitted work successfully: %v", accepted)
 				m.needsWorkRefresh <- struct{}{}
 			}
 		}
@@ -101,7 +104,7 @@ func (m *Miner) workRefreshThread() {
 	for {
 		work, err := GetWork()
 		if err != nil {
-			println("Error getwork:", err.Error())
+			minrLog.Errorf("Error in getwork: %v", err)
 		} else {
 			for _, d := range m.devices {
 				d.SetWork(work)
@@ -151,7 +154,9 @@ func (m *Miner) Run() {
 
 	m.wg.Add(1)
 	go m.workSubmitThread()
-	if benchmark {
+
+	if cfg.Benchmark {
+		minrLog.Warn("Running in BENCHMARK mode! No real mining taking place!")
 		work := &Work{}
 		for _, d := range m.devices {
 			d.SetWork(work)

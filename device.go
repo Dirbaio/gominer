@@ -24,32 +24,29 @@ const (
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
 
-func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t) {
+func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	var program_buffer [1][]byte
 	var program_size [1]cl.CL_size_t
 
 	/* Read each program file and place content into buffer array */
-	program_handle, err1 := os.Open(filename)
-	if err1 != nil {
-		fmt.Printf("Couldn't find the program file %s\n", filename)
-		return nil, nil
+	program_handle, err := os.Open(filename)
+	if err != nil {
+		return nil, nil, err
 	}
 	defer program_handle.Close()
 
-	fi, err2 := program_handle.Stat()
-	if err2 != nil {
-		fmt.Printf("Couldn't find the program stat\n")
-		return nil, nil
+	fi, err := program_handle.Stat()
+	if err != nil {
+		return nil, nil, err
 	}
 	program_size[0] = cl.CL_size_t(fi.Size())
 	program_buffer[0] = make([]byte, program_size[0])
-	read_size, err3 := program_handle.Read(program_buffer[0])
-	if err3 != nil || cl.CL_size_t(read_size) != program_size[0] {
-		fmt.Printf("read file error or file size wrong\n")
-		return nil, nil
+	read_size, err := program_handle.Read(program_buffer[0])
+	if err != nil || cl.CL_size_t(read_size) != program_size[0] {
+		return nil, nil, err
 	}
 
-	return program_buffer[:], program_size[:]
+	return program_buffer[:], program_size[:], nil
 }
 
 type Work struct {
@@ -96,6 +93,10 @@ func hashSmaller(a, b []byte) bool {
 	return false
 }
 
+func clError(status cl.CL_int, f string) error {
+	return fmt.Errorf("%s returned error %s (%d)", f, cl.ERROR_CODES_STRINGS[-status], status)
+}
+
 func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id, workDone chan []byte) (*Device, error) {
 	d := &Device{
 		index:      index,
@@ -111,30 +112,31 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 	// Create the CL context
 	d.context = cl.CLCreateContext(nil, 1, []cl.CL_device_id{deviceID}, nil, nil, &status)
 	if status != cl.CL_SUCCESS {
-		println("CLCreateContext status!=cl.CL_SUCCESS")
-		return nil, nil
+		return nil, clError(status, "CLCreateContext")
 	}
 
 	// Create the command queue
 	d.queue = cl.CLCreateCommandQueue(d.context, deviceID, 0, &status)
 	if status != cl.CL_SUCCESS {
-		println("CLCreateCommandQueue status!=cl.CL_SUCCESS")
-		return nil, nil
+		return nil, clError(status, "CLCreateCommandQueue")
 	}
 
 	// Create the output buffer
 	d.outputBuffer = cl.CLCreateBuffer(d.context, cl.CL_MEM_READ_WRITE, uint32Size*outputBufferSize, nil, &status)
 	if status != cl.CL_SUCCESS {
-		println("CLCreateBuffer status!=cl.CL_SUCCESS")
-		return nil, nil
+		return nil, clError(status, "CLCreateBuffer")
+	}
+
+	// Load kernel source
+	progSrc, progSize, err := loadProgramSource("blake256.cl")
+	if err != nil {
+		return nil, fmt.Errorf("Could not load kernel source: %v", err)
 	}
 
 	// Create the program
-	progSrc, progSize := loadProgramSource("blake256.cl")
 	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc[:], progSize[:], &status)
 	if status != cl.CL_SUCCESS {
-		println("CLCreateProgramWithSource status!=cl.CL_SUCCESS")
-		return nil, nil
+		return nil, clError(status, "CLCreateProgramWithSource")
 	}
 
 	// Build the program for the device
@@ -142,21 +144,20 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 	compilerOptions += fmt.Sprintf(" -D WORKSIZE=%d", localWorksize)
 	status = cl.CLBuildProgram(d.program, 1, []cl.CL_device_id{deviceID}, []byte(compilerOptions), nil, nil)
 	if status != cl.CL_SUCCESS {
-		println("CLBuildProgram status!=cl.CL_SUCCESS")
 		// Something went wrong! Print what it is.
 		var logSize cl.CL_size_t
 		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
 		var program_log interface{}
 		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
-		fmt.Printf("%s\n", program_log)
-		return nil, nil
+		minrLog.Errorf("%s\n", program_log)
+
+		return nil, clError(status, "CLBuildProgram")
 	}
 
 	// Create the kernel
 	d.kernel = cl.CLCreateKernel(d.program, []byte("search"), &status)
 	if status != cl.CL_SUCCESS {
-		println("CLCreateKernel status!=cl.CL_SUCCESS:", status)
-		return nil, nil
+		return nil, clError(status, "CLCreateKernel")
 	}
 
 	return d, nil
@@ -211,7 +212,14 @@ func (d *Device) updateCurrentWork() {
 }
 
 func (d *Device) Run() {
-	println("Started GPU #", d.index)
+	err := d.runDevice()
+	if err != nil {
+		minrLog.Errorf("Error on device: %v", err)
+	}
+}
+
+func (d *Device) runDevice() error {
+	minrLog.Infof("Started GPU #%d", d.index)
 	outputData := make([]uint32, outputBufferSize)
 	var status cl.CL_int
 	for {
@@ -219,7 +227,7 @@ func (d *Device) Run() {
 
 		select {
 		case <-d.quit:
-			return
+			return nil
 		default:
 		}
 
@@ -230,14 +238,16 @@ func (d *Device) Run() {
 		obuf := d.outputBuffer
 		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(obuf)), unsafe.Pointer(&obuf))
 		if status != cl.CL_SUCCESS {
-			println("CLSetKernelArg status!=cl.CL_SUCCESS:", status)
-			return
+			return clError(status, "CLSetKernelArg")
 		}
 
 		// args 1..8: midstate
 		for i := 0; i < 8; i++ {
 			ms := d.midstate[i]
-			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&ms))
+			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&ms))
+			if status != cl.CL_SUCCESS {
+				return clError(status, "CLSetKernelArg")
+			}
 		}
 
 		// args 9..20: lastBlock except nonce
@@ -247,20 +257,17 @@ func (d *Device) Run() {
 				i2++
 			}
 			lb := d.lastBlock[i2]
-			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&lb))
+			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&lb))
+			if status != cl.CL_SUCCESS {
+				return clError(status, "CLSetKernelArg")
+			}
 			i2++
-		}
-
-		if status != cl.CL_SUCCESS {
-			println("CLSetKernelArg status!=cl.CL_SUCCESS")
-			return
 		}
 
 		// Clear the found count from the buffer
 		status = cl.CLEnqueueWriteBuffer(d.queue, d.outputBuffer, cl.CL_FALSE, 0, uint32Size, unsafe.Pointer(&zeroSlice[0]), 0, nil, nil)
 		if status != cl.CL_SUCCESS {
-			println("CLEnqueueWriteBuffer status!=cl.CL_SUCCESS")
-			return
+			return clError(status, "CLEnqueueWriteBuffer")
 		}
 
 		// Execute the kernel
@@ -270,19 +277,17 @@ func (d *Device) Run() {
 		localWorkSize[0] = localWorksize
 		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil, globalWorkSize[:], localWorkSize[:], 0, nil, nil)
 		if status != cl.CL_SUCCESS {
-			println("CLEnqueueNDRangeKernel status!=cl.CL_SUCCESS")
-			return
+			return clError(status, "CLEnqueueNDRangeKernel")
 		}
 
 		// Read the output buffer
 		cl.CLEnqueueReadBuffer(d.queue, d.outputBuffer, cl.CL_TRUE, 0, uint32Size*outputBufferSize, unsafe.Pointer(&outputData[0]), 0, nil, nil)
 		if status != cl.CL_SUCCESS {
-			println("CLEnqueueReadBuffer status!=cl.CL_SUCCESS")
-			return
+			return clError(status, "CLEnqueueReadBuffer")
 		}
 
 		for i := uint32(0); i < outputData[0]; i++ {
-			println("candidate", outputData[i+1])
+			minrLog.Debugf("Found candidate: %d", outputData[i+1])
 			d.foundCandidate(d.lastBlock[nonce1Word], outputData[i+1])
 		}
 
@@ -309,7 +314,7 @@ func (d *Device) foundCandidate(nonce1 uint32, nonce0 uint32) {
 	}
 
 	if hashSmaller(hash[:], d.work.Target[:]) {
-		println("FOUND HASH", hex.EncodeToString(hash[:]))
+		minrLog.Infof("Found hash!!  %s", hex.EncodeToString(hash[:]))
 		d.workDone <- data
 	}
 }
@@ -339,5 +344,6 @@ func (d *Device) PrintStats() {
 	d.workDoneEMA = d.workDoneEMA*alpha + d.workDoneLast*(1-alpha)
 	d.workDoneLast = 0
 	d.runningTime += 1.0
-	println("EMA " + formatHashrate(d.workDoneEMA) + ", avg " + formatHashrate(d.workDoneTotal/d.runningTime))
+
+	minrLog.Infof("EMA %s, avg %s", formatHashrate(d.workDoneEMA), formatHashrate(d.workDoneTotal/d.runningTime))
 }
