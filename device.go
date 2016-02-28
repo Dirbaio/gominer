@@ -227,7 +227,8 @@ func (d *Device) Run() {
 		d.lastBlock[nonce1Word]++
 
 		// arg 0: pointer to the buffer
-		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(d.outputBuffer)), unsafe.Pointer(&d.outputBuffer))
+		obuf := d.outputBuffer
+		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(obuf)), unsafe.Pointer(&obuf))
 		if status != cl.CL_SUCCESS {
 			println("CLSetKernelArg status!=cl.CL_SUCCESS:", status)
 			return
@@ -235,7 +236,8 @@ func (d *Device) Run() {
 
 		// args 1..8: midstate
 		for i := 0; i < 8; i++ {
-			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&d.midstate[i]))
+			ms := d.midstate[i]
+			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&ms))
 		}
 
 		// args 9..20: lastBlock except nonce
@@ -244,7 +246,8 @@ func (d *Device) Run() {
 			if i2 == nonce0Word {
 				i2++
 			}
-			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&d.lastBlock[i2]))
+			lb := d.lastBlock[i2]
+			status |= cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&lb))
 			i2++
 		}
 
