@@ -2,14 +2,65 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"time"
+
+	"github.com/btcsuite/go-socks/socks"
 )
+
+// newHTTPClient returns a new HTTP client that is configured according to the
+// proxy and TLS settings in the associated connection configuration.
+func newHTTPClient(cfg *config) (*http.Client, error) {
+	// Configure proxy if needed.
+	var dial func(network, addr string) (net.Conn, error)
+	if cfg.Proxy != "" {
+		proxy := &socks.Proxy{
+			Addr:     cfg.Proxy,
+			Username: cfg.ProxyUser,
+			Password: cfg.ProxyPass,
+		}
+		dial = func(network, addr string) (net.Conn, error) {
+			c, err := proxy.Dial(network, addr)
+			if err != nil {
+				return nil, err
+			}
+			return c, nil
+		}
+	}
+
+	// Configure TLS if needed.
+	var tlsConfig *tls.Config
+	if !cfg.NoTLS && cfg.RPCCert != "" {
+		pem, err := ioutil.ReadFile(cfg.RPCCert)
+		if err != nil {
+			return nil, err
+		}
+
+		pool := x509.NewCertPool()
+		pool.AppendCertsFromPEM(pem)
+		tlsConfig = &tls.Config{
+			RootCAs:            pool,
+			InsecureSkipVerify: cfg.TLSSkipVerify,
+		}
+	}
+
+	// Create and return the new HTTP client potentially configured with a
+	// proxy and TLS.
+	client := http.Client{
+		Transport: &http.Transport{
+			Dial:            dial,
+			TLSClientConfig: tlsConfig,
+		},
+	}
+	return &client, nil
+}
 
 type getWorkResponseJson struct {
 	Result struct {
@@ -58,20 +109,44 @@ func createHTTPClient() *http.Client {
 
 // GetWork makes a getwork RPC call and returns the result (data and target)
 func GetWork() (*Work, error) {
+	// Generate a request to the configured RPC server.
+	protocol := "http"
+	if !cfg.NoTLS {
+		protocol = "https"
+	}
+	url := protocol + "://" + cfg.RPCServer
 	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": [], "id": 1}`)
-	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
+	bodyBuff := bytes.NewBuffer(jsonStr)
+	httpRequest, err := http.NewRequest("POST", url, bodyBuff)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	httpRequest.Close = true
+	httpRequest.Header.Set("Content-Type", "application/json")
 
-	body, _ := ioutil.ReadAll(resp.Body)
-	if resp.Status != "200 OK" {
-		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, body)
+	// Configure basic access authorization.
+	httpRequest.SetBasicAuth(cfg.RPCUser, cfg.RPCPassword)
+
+	// Create the new HTTP client that is configured according to the user-
+	// specified options and submit the request.
+	httpClient, err := newHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	httpResponse, err := httpClient.Do(httpRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := ioutil.ReadAll(httpResponse.Body)
+	httpResponse.Body.Close()
+	if err != nil {
+		err = fmt.Errorf("error reading json reply: %v", err)
+		return nil, err
+	}
+
+	if httpResponse.Status != "200 OK" {
+		return nil, fmt.Errorf("HTTP %s: %s", httpResponse.Status, body)
 	}
 
 	var res getWorkResponseJson
@@ -107,21 +182,45 @@ func GetWork() (*Work, error) {
 
 // GetWork makes a getwork RPC call and returns the result (data and target)
 func GetWorkSubmit(data []byte) (bool, error) {
+	// Generate a request to the configured RPC server.
+	protocol := "http"
+	if !cfg.NoTLS {
+		protocol = "https"
+	}
+	url := protocol + "://" + cfg.RPCServer
 	hexData := hex.EncodeToString(data)
 	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": ["` + hexData + `"], "id": 1}`)
-	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
+	bodyBuff := bytes.NewBuffer(jsonStr)
+	httpRequest, err := http.NewRequest("POST", url, bodyBuff)
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	httpRequest.Close = true
+	httpRequest.Header.Set("Content-Type", "application/json")
 
-	body, _ := ioutil.ReadAll(resp.Body)
-	if resp.Status != "200 OK" {
-		return false, fmt.Errorf("error calling getwork (%s): %s", resp.Status, body)
+	// Configure basic access authorization.
+	httpRequest.SetBasicAuth(cfg.RPCUser, cfg.RPCPassword)
+
+	// Create the new HTTP client that is configured according to the user-
+	// specified options and submit the request.
+	httpClient, err := newHTTPClient(cfg)
+	if err != nil {
+		return false, err
+	}
+	httpResponse, err := httpClient.Do(httpRequest)
+	if err != nil {
+		return false, err
+	}
+
+	body, err := ioutil.ReadAll(httpResponse.Body)
+	httpResponse.Body.Close()
+	if err != nil {
+		err = fmt.Errorf("error reading json reply: %v", err)
+		return false, err
+	}
+
+	if httpResponse.Status != "200 OK" {
+		return false, fmt.Errorf("error calling getwork (%s): %s", httpResponse.Status, body)
 	}
 
 	var res getWorkSubmitResponseJson

@@ -1,7 +1,11 @@
+// Copyright (c) 2013-2015 The btcsuite developers
+// Copyright (c) 2015-2016 The Decred developers
+
 package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -14,18 +18,17 @@ import (
 const (
 	defaultConfigFilename = "gominer.conf"
 	defaultLogLevel       = "info"
-	defaultDataDirname    = "data"
 	defaultLogDirname     = "logs"
 	defaultLogFilename    = "gominer.log"
 )
 
 var (
-	homeDir            = dcrutil.AppDataDir("dcrd", false)
-	defaultConfigFile  = filepath.Join(homeDir, defaultConfigFilename)
-	defaultDataDir     = filepath.Join(homeDir, defaultDataDirname)
-	defaultRPCKeyFile  = filepath.Join(homeDir, "rpc.key")
-	defaultRPCCertFile = filepath.Join(homeDir, "rpc.cert")
-	defaultLogDir      = filepath.Join(homeDir, defaultLogDirname)
+	minerHomeDir       = dcrutil.AppDataDir("gominer", false)
+	dcrdHomeDir        = dcrutil.AppDataDir("dcrd", false)
+	defaultConfigFile  = filepath.Join(minerHomeDir, defaultConfigFilename)
+	defaultRPCServer   = "localhost"
+	defaultRPCCertFile = filepath.Join(dcrdHomeDir, "rpc.cert")
+	defaultLogDir      = filepath.Join(minerHomeDir, defaultLogDirname)
 )
 
 type config struct {
@@ -33,7 +36,6 @@ type config struct {
 
 	// Config / log options
 	ConfigFile string `short:"C" long:"configfile" description:"Path to configuration file"`
-	DataDir    string `short:"b" long:"datadir" description:"Directory to store wallets and transactions"`
 	LogDir     string `long:"logdir" description:"Directory to log output."`
 	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 
@@ -43,14 +45,40 @@ type config struct {
 	MemProfile string `long:"memprofile" description:"Write mem profile to the specified file"`
 
 	// RPC connection options
-	RPCConnect string `short:"c" long:"rpcconnect" description:"Hostname/IP and port of dcrd RPC server to connect to (default localhost:19109, mainnet: localhost:9109, simnet: localhost:19556)"`
-	Username   string `short:"u" long:"username" description:"Username for client and dcrd authorization"`
-	Password   string `short:"P" long:"password" default-mask:"-" description:"Password for client and dcrd authorization"`
-	CAFile     string `long:"cafile" description:"File containing root certificates to authenticate a TLS connections with dcrd"`
-	RPCCert    string `long:"rpccert" description:"File containing the certificate file"`
-	RPCKey     string `long:"rpckey" description:"File containing the certificate key"`
-	DisableTLS bool   `long:"notls" description:"Disable TLS for the RPC client -- NOTE: This is only allowed if the RPC client is connecting to localhost"`
-	Benchmark  bool   `short:"B" long:"benchmark" description:"Run in benchmark mode."`
+	RPCUser     string `short:"u" long:"rpcuser" description:"RPC username"`
+	RPCPassword string `short:"P" long:"rpcpass" default-mask:"-" description:"RPC password"`
+	RPCServer   string `short:"s" long:"rpcserver" description:"RPC server to connect to"`
+	RPCCert     string `short:"c" long:"rpccert" description:"RPC server certificate chain for validation"`
+	NoTLS       bool   `long:"notls" description:"Disable TLS"`
+	Proxy       string `long:"proxy" description:"Connect via SOCKS5 proxy (eg. 127.0.0.1:9050)"`
+	ProxyUser   string `long:"proxyuser" description:"Username for proxy server"`
+	ProxyPass   string `long:"proxypass" default-mask:"-" description:"Password for proxy server"`
+
+	Benchmark bool `short:"B" long:"benchmark" description:"Run in benchmark mode."`
+
+	TestNet       bool `long:"testnet" description:"Connect to testnet"`
+	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
+	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
+}
+
+// normalizeAddress returns addr with the passed default port appended if
+// there is not already a port specified.
+func normalizeAddress(addr string, useTestNet, useSimNet bool) string {
+	_, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		var defaultPort string
+		switch {
+		case useTestNet:
+			defaultPort = "19109"
+		case useSimNet:
+			defaultPort = "19556"
+		default:
+			defaultPort = "9109"
+		}
+
+		return net.JoinHostPort(addr, defaultPort)
+	}
+	return addr
 }
 
 // filesExists reports whether the named file or directory exists.
@@ -147,6 +175,20 @@ func parseAndSetDebugLevels(debugLevel string) error {
 	return nil
 }
 
+// cleanAndExpandPath expands environement variables and leading ~ in the
+// passed path, cleans the result, and returns it.
+func cleanAndExpandPath(path string) string {
+	// Expand initial ~ to OS specific home directory.
+	if strings.HasPrefix(path, "~") {
+		homeDir := filepath.Dir(minerHomeDir)
+		path = strings.Replace(path, "~", homeDir, 1)
+	}
+
+	// NOTE: The os.ExpandEnv doesn't work with Windows-style %VARIABLE%,
+	// but they variables can still be expanded via POSIX-style $VARIABLE.
+	return filepath.Clean(os.ExpandEnv(path))
+}
+
 // loadConfig initializes and parses the config using a config file and command
 // line options.
 //
@@ -164,22 +206,24 @@ func loadConfig() (*config, []string, error) {
 	cfg := config{
 		ConfigFile: defaultConfigFile,
 		DebugLevel: defaultLogLevel,
-		DataDir:    defaultDataDir,
 		LogDir:     defaultLogDir,
-		RPCKey:     defaultRPCKeyFile,
+		RPCServer:  defaultRPCServer,
 		RPCCert:    defaultRPCCertFile,
 	}
 
-	// A config file in the current directory takes precedence.
-	if fileExists(defaultConfigFilename) {
-		cfg.ConfigFile = defaultConfigFile
+	// Create the home directory if it doesn't already exist.
+	funcName := "loadConfig"
+	err := os.MkdirAll(minerHomeDir, 0700)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(-1)
 	}
 
 	// Pre-parse the command line options to see if an alternative config
 	// file or the version flag was specified.
 	preCfg := cfg
 	preParser := flags.NewParser(&preCfg, flags.Default)
-	_, err := preParser.Parse()
+	_, err = preParser.Parse()
 	if err != nil {
 		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
 			preParser.WriteHelp(os.Stderr)
@@ -188,7 +232,6 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	// Show the version and exit if the version flag was specified.
-	funcName := "loadConfig"
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
@@ -219,33 +262,18 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	// If an alternate data directory was specified, and paths with defaults
-	// relative to the data dir are unchanged, modify each path to be
-	// relative to the new data dir.
-	if cfg.DataDir != defaultDataDir {
-		if cfg.RPCKey == defaultRPCKeyFile {
-			cfg.RPCKey = filepath.Join(cfg.DataDir, "rpc.key")
-		}
-		if cfg.RPCCert == defaultRPCCertFile {
-			cfg.RPCCert = filepath.Join(cfg.DataDir, "rpc.cert")
-		}
+	// Multiple networks can't be selected simultaneously.
+	numNets := 0
+	if cfg.TestNet {
+		numNets++
 	}
-
-	// Create the home directory if it doesn't already exist.
-	err = os.MkdirAll(homeDir, 0700)
-	if err != nil {
-		// Show a nicer error message if it's because a symlink is
-		// linked to a directory that does not exist (probably because
-		// it's not mounted).
-		if e, ok := err.(*os.PathError); ok && os.IsExist(err) {
-			if link, lerr := os.Readlink(e.Path); lerr == nil {
-				str := "is symlink %s -> %s mounted?"
-				err = fmt.Errorf(str, e.Path, link)
-			}
-		}
-
-		str := "%s: Failed to create home directory: %v"
-		err := fmt.Errorf(str, funcName, err)
+	if cfg.SimNet {
+		numNets++
+	}
+	if numNets > 1 {
+		str := "%s: The testnet and simnet params can't be used " +
+			"together -- choose one of the two"
+		err := fmt.Errorf(str, "loadConfig")
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
 	}
@@ -268,9 +296,13 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	if cfg.RPCConnect == "" {
-		cfg.RPCConnect = "http://localhost:9109"
-	}
+	// Handle environment variable expansion in the RPC certificate path.
+	cfg.RPCCert = cleanAndExpandPath(cfg.RPCCert)
+
+	// Add default port to RPC server based on --testnet flag
+	// if needed.
+	cfg.RPCServer = normalizeAddress(cfg.RPCServer, cfg.TestNet,
+		cfg.SimNet)
 
 	// Warn about missing config file only after all other configuration is
 	// done.  This prevents the warning on help messages and invalid
