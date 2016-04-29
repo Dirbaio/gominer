@@ -7,8 +7,8 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/Dirbaio/gominer/blake256"
-	"github.com/Dirbaio/gominer/cl"
+	"github.com/decred/gominer/blake256"
+	"github.com/decred/gominer/cl"
 )
 
 const (

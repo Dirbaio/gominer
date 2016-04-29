@@ -4,7 +4,7 @@
 
 You need to have OpenCL installed. To download and build gominer, run:
 
-    go get github.com/Dirbaio/gominer
+    go get github.com/decred/gominer
 
 ## Running
 

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Dirbaio/gominer/cl"
+	"github.com/decred/gominer/cl"
 )
 
 const benchmark = true
