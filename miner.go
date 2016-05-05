@@ -8,8 +8,6 @@ import (
 	"github.com/decred/gominer/cl"
 )
 
-const benchmark = true
-
 func getCLPlatforms() ([]cl.CL_platform_id, error) {
 	var numPlatforms cl.CL_uint
 	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
