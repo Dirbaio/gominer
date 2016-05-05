@@ -43,6 +43,7 @@ type Miner struct {
 	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
+	pool             *Stratum
 }
 
 func NewMiner() (*Miner, error) {
@@ -50,6 +51,15 @@ func NewMiner() (*Miner, error) {
 		workDone:         make(chan []byte, 10),
 		quit:             make(chan struct{}),
 		needsWorkRefresh: make(chan struct{}),
+	}
+
+	// If needed, start pool code.
+	if cfg.Pool != "" && !cfg.Benchmark {
+		s, err := StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword)
+		if err != nil {
+			return nil, err
+		}
+		m.pool = s
 	}
 
 	platformIDs, err := getCLPlatforms()
@@ -82,12 +92,23 @@ func (m *Miner) workSubmitThread() {
 		case <-m.quit:
 			return
 		case data := <-m.workDone:
-			accepted, err := GetWorkSubmit(data)
-			if err != nil {
-				minrLog.Errorf("Error submitting work: %v", err)
+			// Only use that is we are not using a pool.
+			if m.pool == nil {
+				accepted, err := GetWorkSubmit(data)
+				if err != nil {
+					minrLog.Errorf("Error submitting work: %v", err)
+				} else {
+					minrLog.Errorf("Submitted work successfully: %v", accepted)
+					m.needsWorkRefresh <- struct{}{}
+				}
 			} else {
-				minrLog.Errorf("Submitted work successfully: %v", accepted)
-				m.needsWorkRefresh <- struct{}{}
+				accepted, err := GetPoolWorkSubmit(data, m.pool)
+				if err != nil {
+					minrLog.Errorf("Error submitting work to pool: %v", err)
+				} else {
+					minrLog.Errorf("Submitted work to pool successfully: %v", accepted)
+					m.needsWorkRefresh <- struct{}{}
+				}
 			}
 		}
 	}
@@ -100,15 +121,26 @@ func (m *Miner) workRefreshThread() {
 	defer t.Stop()
 
 	for {
-		work, err := GetWork()
-		if err != nil {
-			minrLog.Errorf("Error in getwork: %v", err)
+		// Only use that is we are not using a pool.
+		if m.pool == nil {
+			work, err := GetWork()
+			if err != nil {
+				minrLog.Errorf("Error in getwork: %v", err)
+			} else {
+				for _, d := range m.devices {
+					d.SetWork(work)
+				}
+			}
 		} else {
-			for _, d := range m.devices {
-				d.SetWork(work)
+			work, err := GetPoolWork(m.pool)
+			if err != nil {
+				minrLog.Errorf("Error in getpoolwork: %v", err)
+			} else {
+				for _, d := range m.devices {
+					d.SetWork(work)
+				}
 			}
 		}
-
 		select {
 		case <-m.quit:
 			return
@@ -121,7 +153,7 @@ func (m *Miner) workRefreshThread() {
 func (m *Miner) printStatsThread() {
 	defer m.wg.Done()
 
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(time.Second * 5)
 	defer t.Stop()
 
 	for {

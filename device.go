@@ -5,8 +5,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"unsafe"
+
+	"github.com/decred/dcrd/blockchain"
+	"github.com/decred/dcrd/chaincfg/chainhash"
 
 	"github.com/decred/gominer/blake256"
 	"github.com/decred/gominer/cl"
@@ -58,6 +62,7 @@ type Device struct {
 	index        int
 	platformID   cl.CL_platform_id
 	deviceID     cl.CL_device_id
+	deviceName   string
 	context      cl.CL_context
 	queue        cl.CL_command_queue
 	outputBuffer cl.CL_mem
@@ -102,6 +107,7 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 		index:      index,
 		platformID: platformID,
 		deviceID:   deviceID,
+		deviceName: getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"),
 		quit:       make(chan struct{}),
 		newWork:    make(chan *Work, 5),
 		workDone:   workDone,
@@ -227,7 +233,7 @@ func (d *Device) Run() {
 }
 
 func (d *Device) runDevice() error {
-	minrLog.Infof("Started GPU #%d", d.index)
+	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
 	globalWorksize := math.Exp2(float64(cfg.Intensity))
 	minrLog.Debugf("Intensity %v", cfg.Intensity)
@@ -323,7 +329,17 @@ func (d *Device) foundCandidate(nonce1 uint32, nonce0 uint32) {
 		binary.BigEndian.PutUint32(hash[i*4:], state[i])
 	}
 
-	if hashSmaller(hash[:], d.work.Target[:]) {
+	newHash, err := chainhash.NewHashFromStr(hex.EncodeToString(hash[:]))
+	if err != nil {
+		minrLog.Error(err)
+	}
+	hashNum := blockchain.ShaHashToBig(newHash)
+	target := new(big.Int)
+	target.SetString(hex.EncodeToString(d.work.Target[:]), 16)
+	if hashNum.Cmp(target) > 0 {
+		minrLog.Infof("Hash %s below target %s", hex.EncodeToString(hash[:]), hex.EncodeToString(d.work.Target[:]))
+
+	} else {
 		minrLog.Infof("Found hash!!  %s", hex.EncodeToString(hash[:]))
 		d.workDone <- data
 	}
@@ -339,21 +355,48 @@ func (d *Device) SetWork(w *Work) {
 
 func formatHashrate(h float64) string {
 	if h > 1000000000 {
-		return fmt.Sprintf("%.3f GH/s", h/1000000000)
+		return fmt.Sprintf("%.1fGH/s", h/1000000000)
 	} else if h > 1000000 {
-		return fmt.Sprintf("%.3f MH/s", h/1000000)
+		return fmt.Sprintf("%.0fMH/s", h/1000000)
 	} else if h > 1000 {
-		return fmt.Sprintf("%.3f kH/s", h/1000)
-	} else {
-		return fmt.Sprintf("%.3f GH/s", h)
+		return fmt.Sprintf("%.1fkH/s", h/1000)
+	} else if h == 0 {
+		return "0H/s"
 	}
+
+	return fmt.Sprintf("%.1f GH/s", h)
+}
+
+func getDeviceInfo(id cl.CL_device_id,
+	name cl.CL_device_info,
+	str string) string {
+
+	var errNum cl.CL_int
+	var paramValueSize cl.CL_size_t
+
+	errNum = cl.CLGetDeviceInfo(id, name, 0, nil, &paramValueSize)
+
+	if errNum != cl.CL_SUCCESS {
+		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
+	}
+
+	var info interface{}
+	errNum = cl.CLGetDeviceInfo(id, name, paramValueSize, &info, nil)
+	if errNum != cl.CL_SUCCESS {
+		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
+	}
+
+	strinfo := fmt.Sprintf("%v", info)
+
+	return strinfo
 }
 
 func (d *Device) PrintStats() {
 	alpha := 0.95
 	d.workDoneEMA = d.workDoneEMA*alpha + d.workDoneLast*(1-alpha)
 	d.workDoneLast = 0
-	d.runningTime += 1.0
+	d.runningTime += 5.0
 
-	minrLog.Infof("EMA %s, avg %s", formatHashrate(d.workDoneEMA), formatHashrate(d.workDoneTotal/d.runningTime))
+	minrLog.Infof("GPU #%d: %s, EMA %s avg %s", d.index, d.deviceName,
+		formatHashrate(d.workDoneEMA), formatHashrate(d.workDoneTotal/d.runningTime))
 }

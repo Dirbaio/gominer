@@ -65,6 +65,11 @@ type config struct {
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
 	Intensity int `short:"i" long:"intensity" description:"Intensity."`
+
+	// Pool related options
+	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port) "`
+	PoolUser     string `short:"m" long:"pooluser" description:"Pool username"`
+	PoolPassword string `short:"n" long:"poolpass" default-mask:"-" description:"Pool password"`
 }
 
 // normalizeAddress returns addr with the passed default port appended if

@@ -12,11 +12,13 @@ var (
 	backendLog = seelog.Disabled
 	mainLog    = btclog.Disabled
 	minrLog    = btclog.Disabled
+	poolLog    = btclog.Disabled
 )
 
 var subsystemLoggers = map[string]btclog.Logger{
 	"MAIN": mainLog,
 	"MINR": minrLog,
+	"POOL": poolLog,
 }
 
 // useLogger updates the logger references for subsystemID to logger.  Invalid
@@ -32,6 +34,8 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 		mainLog = logger
 	case "MINR":
 		minrLog = logger
+	case "POOL":
+		poolLog = logger
 	}
 }
 

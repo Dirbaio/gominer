@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/btcsuite/go-socks/socks"
@@ -180,6 +181,37 @@ func GetWork() (*Work, error) {
 	return &w, nil
 }
 
+// GetPoolWork gets work from a stratum enabled pool
+func GetPoolWork(pool *Stratum) (*Work, error) {
+	// Get Next work for stratum and mark it as used
+	if pool.PoolWork.NewWork {
+		poolLog.Info("Received new work from pool.")
+		// Mark used
+		pool.PoolWork.NewWork = false
+
+		if pool.PoolWork.JobID == "" {
+			return nil, fmt.Errorf("No work available (no job id)")
+		}
+
+		err := pool.PrepWork()
+		if err != nil {
+			return nil, err
+		}
+
+		intJob, _ := strconv.ParseInt(pool.PoolWork.JobID, 16, 0)
+		poolLog.Infof("job %v height %v", intJob, pool.PoolWork.Height)
+
+		return pool.PoolWork.Work, nil
+	}
+
+	// Return the work we already had, do not recalculate
+	if pool.PoolWork.Work != nil {
+		return pool.PoolWork.Work, nil
+	}
+
+	return nil, fmt.Errorf("No work available.")
+}
+
 // GetWork makes a getwork RPC call and returns the result (data and target)
 func GetWorkSubmit(data []byte) (bool, error) {
 	// Generate a request to the configured RPC server.
@@ -234,4 +266,35 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	}
 
 	return res.Result, nil
+}
+
+// GetPoolWorkSubmit sends the result to the stratum enabled pool
+func GetPoolWorkSubmit(data []byte, pool *Stratum) (bool, error) {
+
+	sub, err := pool.PrepSubmit(data)
+	if err != nil {
+		return false, err
+	}
+
+	// json encode
+	m, err := json.Marshal(sub)
+	if err != nil {
+		return false, err
+	}
+
+	// send
+	poolLog.Tracef("> %s", m)
+	_, err = pool.Conn.Write(m)
+	if err != nil {
+		return false, err
+	}
+	_, err = pool.Conn.Write([]byte("\n"))
+	if err != nil {
+		return false, err
+	}
+	pool.submitted = true
+
+	pool.PoolWork.Work = nil
+
+	return false, nil
 }
