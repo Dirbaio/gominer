@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"os"
 	"unsafe"
 
@@ -13,7 +14,6 @@ import (
 
 const (
 	outputBufferSize = cl.CL_size_t(64)
-	globalWorksize   = 65536 * 1024
 	localWorksize    = 64
 	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
 
@@ -229,6 +229,8 @@ func (d *Device) Run() {
 func (d *Device) runDevice() error {
 	minrLog.Infof("Started GPU #%d", d.index)
 	outputData := make([]uint32, outputBufferSize)
+	globalWorksize := math.Exp2(float64(cfg.Intensity))
+	minrLog.Debugf("Intensity %v", cfg.Intensity)
 	var status cl.CL_int
 	for {
 		d.updateCurrentWork()
@@ -280,7 +282,7 @@ func (d *Device) runDevice() error {
 
 		// Execute the kernel
 		var globalWorkSize [1]cl.CL_size_t
-		globalWorkSize[0] = globalWorksize
+		globalWorkSize[0] = cl.CL_size_t(globalWorksize)
 		var localWorkSize [1]cl.CL_size_t
 		localWorkSize[0] = localWorksize
 		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil, globalWorkSize[:], localWorkSize[:], 0, nil, nil)

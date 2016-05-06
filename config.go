@@ -29,6 +29,10 @@ var (
 	defaultRPCServer   = "localhost"
 	defaultRPCCertFile = filepath.Join(dcrdHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(minerHomeDir, defaultLogDirname)
+	defaultIntensity   = 26
+	// Took these values from cgminer.
+	minIntensity = 8
+	maxIntensity = 31
 )
 
 type config struct {
@@ -59,6 +63,8 @@ type config struct {
 	TestNet       bool `long:"testnet" description:"Connect to testnet"`
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
+
+	Intensity int `short:"i" long:"intensity" description:"Intensity."`
 }
 
 // normalizeAddress returns addr with the passed default port appended if
@@ -209,6 +215,7 @@ func loadConfig() (*config, []string, error) {
 		LogDir:     defaultLogDir,
 		RPCServer:  defaultRPCServer,
 		RPCCert:    defaultRPCCertFile,
+		Intensity:  defaultIntensity,
 	}
 
 	// Create the home directory if it doesn't already exist.
@@ -274,6 +281,13 @@ func loadConfig() (*config, []string, error) {
 		str := "%s: The testnet and simnet params can't be used " +
 			"together -- choose one of the two"
 		err := fmt.Errorf(str, "loadConfig")
+		fmt.Fprintln(os.Stderr, err)
+		return nil, nil, err
+	}
+
+	if (cfg.Intensity < minIntensity) || (cfg.Intensity > maxIntensity) {
+		err := fmt.Errorf("Intensity %v not without range %v to %v.",
+			cfg.Intensity, minIntensity, maxIntensity)
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
 	}
