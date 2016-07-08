@@ -134,7 +134,7 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 	}
 
 	// Load kernel source
-	progSrc, progSize, err := loadProgramSource("blake256.cl")
+	progSrc, progSize, err := loadProgramSource(cfg.ClKernel)
 	if err != nil {
 		return nil, fmt.Errorf("Could not load kernel source: %v", err)
 	}
