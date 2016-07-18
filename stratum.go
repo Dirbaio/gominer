@@ -21,8 +21,11 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
+	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/wire"
 )
+
+var chainParams = &chaincfg.MainNetParams
 
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
@@ -37,7 +40,7 @@ type Stratum struct {
 	subID     uint64
 	submitID  uint64
 	Diff      float64
-	Target    string
+	Target    *big.Int
 	submitted bool
 	PoolWork  NotifyWork
 }
@@ -49,6 +52,7 @@ type NotifyWork struct {
 	ExtraNonce1       string
 	ExtraNonce2       uint64
 	ExtraNonce2Length float64
+	Nonce2            uint32
 	CB1               string
 	CB2               string
 	Height            int64
@@ -115,9 +119,9 @@ type NotifyRes struct {
 
 // Submit models a submission message.
 type Submit struct {
-	Method string      `json:"method"`
 	Params []string    `json:"params"`
 	ID     interface{} `json:"id"`
+	Method string      `json:"method"`
 }
 
 // errJsonType is an error for json that we do not expect.
@@ -150,7 +154,7 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 	stratum.authID = 2
 	// Target for share is 1 unless we hear otherwise.
 	stratum.Diff = 1
-	stratum.Target = stratum.diffToTarget(stratum.Diff)
+	stratum.Target = diffToTarget(stratum.Diff)
 	stratum.PoolWork.NewWork = false
 	stratum.Reader = bufio.NewReader(stratum.Conn)
 	go stratum.Listen()
@@ -622,7 +626,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if !ok {
 			return nil, errJsonType
 		}
-		s.Target = s.diffToTarget(difficulty)
+		s.Target = diffToTarget(difficulty)
 		s.Diff = difficulty
 		var nres = StratumMsg{}
 		nres.Method = method
@@ -724,9 +728,9 @@ func (s *Stratum) PrepWork() error {
 		poolLog.Error("Error decoding ExtraNonce2.")
 		return err
 	}
-	poolLog.Debugf("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
+	poolLog.Tracef("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
 	extraNonce := append(en1[:], en2[:]...)
-	poolLog.Debugf("extraNonce %v", extraNonce)
+	poolLog.Tracef("extraNonce %v", extraNonce)
 
 	// Increase extranonce2
 	s.PoolWork.ExtraNonce2++
@@ -788,15 +792,6 @@ func (s *Stratum) PrepWork() error {
 		return err
 	}
 
-	target, err := hex.DecodeString(s.Target)
-	if err != nil {
-		poolLog.Error("Error decoding Target")
-		return err
-	}
-	if len(target) != 32 {
-		return fmt.Errorf("Wrong target length: got %d, expected 32", len(target))
-	}
-
 	data := blockHeader
 	poolLog.Debugf("data0 %v", data)
 	poolLog.Tracef("data len %v", len(data))
@@ -842,15 +837,34 @@ func (s *Stratum) PrepWork() error {
 		poolLog.Errorf("Unable to generate random bytes")
 	}
 	workPosition += 4
+	// XXX would be nice to enable a static 'random' number here for tests
+	//binary.LittleEndian.PutUint32(randomBytes, 4066485248)
+	poolLog.Tracef("Random data: %v at: %v", randomBytes, workPosition)
 	copy(workdata[workPosition:], randomBytes)
 
 	poolLog.Debugf("workdata len %v", len(workdata))
 	poolLog.Tracef("workdata %v", hex.EncodeToString(workdata[:]))
 
 	var w Work
+	/*var empty = []byte{
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+	copy(w.Data[:], empty[:])*/
 	copy(w.Data[:], workdata[:])
-	copy(w.Target[:], target)
-	poolLog.Tracef("final data %v, target %v", hex.EncodeToString(data), hex.EncodeToString(target))
+	w.Target = s.Target
+	w.Nonce2 = s.PoolWork.Nonce2
+	poolLog.Tracef("final data %v, target %v", hex.EncodeToString(w.Data[:]), w.Target)
 	s.PoolWork.Work = &w
 	return nil
 
@@ -896,9 +910,9 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 		poolLog.Error("Error decoding ExtraNonce2.")
 		//return err
 	}
-	poolLog.Tracef("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
+	poolLog.Errorf("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
 	extraNonce := append(en1[:], en2[:]...)
-	poolLog.Tracef("extraNonce %v", extraNonce)
+	poolLog.Errorf("extraNonce %v", extraNonce)
 
 	s.ID++
 	sub.ID = s.ID
@@ -909,9 +923,11 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 
 	poolLog.Tracef("raw User %v JobId %v xnonce2 %v xnonce2length %v time %v nonce %v", s.User, s.PoolWork.JobID, s.PoolWork.ExtraNonce2, s.PoolWork.ExtraNonce2Length, submittedHeader.Timestamp, submittedHeader.Nonce)
 
-	poolLog.Tracef("encoded User %v JobId %v xnonce2 %v time %v nonce %v", s.User, s.PoolWork.JobID, en2, string(time), nonce)
+	xnonce2str := hex.EncodeToString(data[144:156])
 
-	sub.Params = []string{s.User, s.PoolWork.JobID, hex.EncodeToString(en2), s.PoolWork.Ntime, nonce}
+	poolLog.Tracef("encoded User %v JobId %v xnonce2 %v time %v nonce %v", s.User, s.PoolWork.JobID, xnonce2str, string(time), nonce)
+
+	sub.Params = []string{s.User, s.PoolWork.JobID, xnonce2str, s.PoolWork.Ntime, nonce}
 	// pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, nvotestr
 
 	return sub, nil
@@ -948,44 +964,14 @@ func reverseToInt(s string) (int32, error) {
 	return int32(i), err
 }
 
-func (s *Stratum) diffToTarget(diff float64) string {
-	// diff/0 would be bad.
-	if s.Diff == 0 {
-		s.Diff = 1
-	}
-	// Also if diff wasn't set properly go with default
-	// rather then end if div by 0.
-	if diff == 0 {
-		diff = 1
-	}
-	diffNew := int64(diff / s.Diff)
-	_, targetHex := s.getTargetHex(diffNew)
-	return targetHex
-}
+// diffToTarget converts a whole number difficulty into a target.
+func diffToTarget(diff float64) *big.Int {
+	divisor := new(big.Int).SetInt64(int64(diff))
+	max := chainParams.PowLimit
+	target := new(big.Int)
+	target.Div(max, divisor)
 
-// Adapted from https://github.com/sammy007/go-cryptonote-pool.git
-func (s *Stratum) getTargetHex(diff int64) (uint32, string) {
-	var Diff1 *big.Int
-	Diff1 = new(big.Int)
-	Diff1.SetString("00000000FFFF0000000000000000000000000000000000000000000000000000", 16)
-
-	padded := make([]byte, 32)
-
-	diff2 := new(big.Int)
-	diff2.SetInt64(int64(diff))
-
-	diff3 := new(big.Int)
-	diff3 = diff3.Div(Diff1, diff2)
-
-	diffBuff := diff3.Bytes()
-	copy(padded[32-len(diffBuff):], diffBuff)
-	buff := padded[0:32]
-	var target uint32
-	targetBuff := bytes.NewReader(buff)
-	binary.Read(targetBuff, binary.LittleEndian, &target)
-	targetHex := hex.EncodeToString(buff)
-
-	return target, targetHex
+	return target
 }
 
 func reverse(src []byte) []byte {

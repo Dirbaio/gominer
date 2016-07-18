@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net"
 	"net/http"
 	"strconv"
@@ -174,10 +175,12 @@ func GetWork() (*Work, error) {
 	if len(target) != 32 {
 		return nil, fmt.Errorf("Wrong target length: got %d, expected 32", len(target))
 	}
+	bigTarget := new(big.Int)
+	bigTarget.SetString(hex.EncodeToString(target), 16)
 
 	var w Work
 	copy(w.Data[:], data)
-	copy(w.Target[:], target)
+	w.Target = bigTarget
 	return &w, nil
 }
 
