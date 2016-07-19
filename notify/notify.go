@@ -8,8 +8,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"strings"
 )
 
 func main() {
@@ -28,25 +30,35 @@ func main() {
 }
 
 func handleConnection(c net.Conn) {
-	msg1 := `{"id":1,"result":[[["mining.set_difficulty","deadbeefcafebabecc7e1c0000000000"],["mining.notify","deadbeefcafebabecc7e1c0000000000"]],"00000000000000000fe43fbb",12],"error":null}`
-	msg2 := `{"id":null,"method":"mining.set_difficulty","params":[8]}`
-	msg3 := `{"id":null,"method":"mining.notify","params":["bb3b","6ea8e28a4b172946d743eb3382785120990fe73c247e3dbd000004fc00000000","b25bc74bba24acd4729e61c9f4c53e4f457dc3082d2d28355ae6e6df65e54b4a2040ba54288130410bbcfc548b13711b039bc89f17b3bacb6532bd9001e183f101005c141421c2b80400000097a50000d9f8171ad0357a0f0100000069a3000081460000dbca76570000000000000000","",[],"01000000","1a17f8d9","5776cadb",true]}`
+	msg1 := `{"id":1,"result":[[["mining.set_difficulty","1"],["mining.notify","2bd595e34826a3b6271400920d4decb8"]],"0000000000000000e3014335",12],"error":null}`
+	msg2 := `{"id":2,"result":true,"error":null}`
+	msg3 := `{"id":null,"method":"mining.set_difficulty","params":[1]}`
+	msg4 := `{"id":3,"result":true,"error":null}`
+	msg5 := `{"id":null,"method":"mining.notify","params":["76df","7c3b9a506a98f865820e4c46aaa65cec37f18cf1bf7c508700000ac200000000","a455f69725e9c8623baa3c9c5a708aefb947702dc2b620b4c10129977e104c0275571a5ca5b1308b075fe74224504c9e6b1153f3de97235e7a8c7e58ea8f1c55010086a1d41fb3ee05000000fda400004a33121a2db33e1101000000abae0000260800008ec783570000000000000000","",[],"01000000","1a12334a","5783c78e",true]}`
 	// WorkData generated from that should be:
-	// 010000008ae2a86e4629174b33eb43d7205178823ce70f99bd3d7e24fc04000000000000b25bc74bba24acd4729e61c9f4c53e4f457dc3082d2d28355ae6e6df65e54b4a2040ba54288130410bbcfc548b13711b039bc89f17b3bacb6532bd9001e183f101005c141421c2b80400000097a50000d9f8171ad0357a0f0100000069a3000081460000dbca7657000000000000000000188fec0fe43fbb000000000000000000000000000000000000000000000000
+	// 010000008ae2a86e4629174b33eb43d7205178823ce70f99bd3d7e24fc04000000000000b25bc74bba24acd4729e61c9f4c53e4f457dc3082d2d28355ae6e6df65e54b4a2040ba54288130410bbcfc548b13711b039bc89f17b3bacb6532bd9001e183f101005c141421c2b80400000097a50000d9f8171ad0357a0f0100000069a3000081460000dbca7657000000000000000000f808120fe43fbb000000000000000000000000000000000000000000000000
+	msg6 := `{"id":4,"result":true,"error":null}`
 
-	buf := make([]byte, 1024)
-	_, err := c.Read(buf)
-	if err != nil {
-		fmt.Println("Error reading:", err.Error())
+	reader := bufio.NewReader(c)
+
+	for {
+		buf, err := reader.ReadBytes('\n')
+		if err != nil {
+			c.Close()
+			return
+		}
+		fmt.Println("Received " + string(buf))
+
+		if strings.Contains(string(buf), "mining.submit") {
+			send("mining.submit reply", []byte(msg6), c)
+		} else {
+			send("subscribe reply", []byte(msg1), c)
+			send("authorize reply", []byte(msg2), c)
+			send("difficulty", []byte(msg3), c)
+			send("mining.extranonce.subscribe", []byte(msg4), c)
+			send("notify", []byte(msg5), c)
+		}
 	}
-
-	fmt.Println(string(buf))
-
-	send("subscribe reply", []byte(msg1), c)
-	send("difficulty", []byte(msg2), c)
-	send("notify", []byte(msg3), c)
-
-	//c.Close()
 }
 
 func send(mType string, m []byte, c net.Conn) {
