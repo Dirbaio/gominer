@@ -221,7 +221,7 @@ func (d *Device) updateCurrentWork() {
 
 	// Convert the next block to uint32 array.
 	for i := 0; i < 16; i++ {
-		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4:])
+		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4 : 132+i*4])
 	}
 }
 
