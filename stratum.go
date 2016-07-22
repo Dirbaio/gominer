@@ -22,6 +22,8 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
+	"github.com/btcsuite/go-socks/socks"
+
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
@@ -144,7 +146,18 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 		err := errors.New("Only stratum pools supported.")
 		return nil, err
 	}
-	conn, err := net.Dial("tcp", pool)
+	var conn net.Conn
+	var err error
+	if cfg.Proxy != "" {
+		proxy := &socks.Proxy{
+			Addr:     cfg.Proxy,
+			Username: cfg.ProxyUser,
+			Password: cfg.ProxyPass,
+		}
+		conn, err = proxy.Dial("tcp", pool)
+	} else {
+		conn, err = net.Dial("tcp", pool)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +196,18 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 
 // Reconnect reconnects to a stratum server if the connection has been lost.
 func (s *Stratum) Reconnect() error {
-	conn, err := net.Dial("tcp", s.Pool)
+	var conn net.Conn
+	var err error
+	if cfg.Proxy != "" {
+		proxy := &socks.Proxy{
+			Addr:     cfg.Proxy,
+			Username: cfg.ProxyUser,
+			Password: cfg.ProxyPass,
+		}
+		conn, err = proxy.Dial("tcp", s.Pool)
+	} else {
+		conn, err = net.Dial("tcp", s.Pool)
+	}
 	if err != nil {
 		return err
 	}
