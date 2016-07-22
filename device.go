@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"os"
+	"reflect"
+	"time"
 	"unsafe"
 
 	"github.com/decred/dcrd/blockchain"
@@ -21,9 +25,10 @@ const (
 	localWorksize    = 64
 	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
 
-	nonce0Word = 3
-	nonce1Word = 4
-	nonce2Word = 5
+	timestampWord = 2
+	nonce0Word    = 3
+	nonce1Word    = 4
+	nonce2Word    = 5
 )
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
@@ -32,31 +37,48 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	var program_buffer [1][]byte
 	var program_size [1]cl.CL_size_t
 
-	/* Read each program file and place content into buffer array */
+	// Read each program file and place content into buffer array.
 	program_handle, err := os.Open(filename)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer program_handle.Close()
 
-	fi, err := program_handle.Stat()
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, program_handle)
 	if err != nil {
 		return nil, nil, err
 	}
-	program_size[0] = cl.CL_size_t(fi.Size())
+	str := string(buf.Bytes())
+	program_final := []byte(str)
+
+	program_size[0] = cl.CL_size_t(len(program_final))
 	program_buffer[0] = make([]byte, program_size[0])
-	read_size, err := program_handle.Read(program_buffer[0])
-	if err != nil || cl.CL_size_t(read_size) != program_size[0] {
-		return nil, nil, err
+	for i := range program_final {
+		program_buffer[0][i] = program_final[i]
 	}
 
 	return program_buffer[:], program_size[:], nil
 }
 
+// NewWork is the constructor for work.
+func NewWork(data [192]byte, target *big.Int, jobTime uint32, timeReceived uint32,
+	isSolo bool) *Work {
+	return &Work{
+		Data:         data,
+		Target:       target,
+		JobTime:      jobTime,
+		TimeReceived: timeReceived,
+		isSolo:       isSolo,
+	}
+}
+
 type Work struct {
-	Data   [192]byte
-	Target *big.Int
-	Nonce2 uint32
+	Data         [192]byte
+	Target       *big.Int
+	JobTime      uint32
+	TimeReceived uint32
+	isSolo       bool
 }
 
 type Device struct {
@@ -70,6 +92,14 @@ type Device struct {
 	program      cl.CL_program
 	kernel       cl.CL_kernel
 
+	// extraNonce is the device extraNonce, where the first
+	// byte is the device ID (supporting up to 255 devices)
+	// while the last 3 bytes is the extraNonce value. If
+	// the extraNonce goes through all 0x??FFFFFF values,
+	// it will reset to 0x??000000.
+	extraNonce    uint32
+	currentWorkID uint32
+
 	midstate  [8]uint32
 	lastBlock [16]uint32
 
@@ -78,32 +108,41 @@ type Device struct {
 	workDone chan []byte
 	hasWork  bool
 
-	workDoneEMA   float64
-	workDoneLast  float64
-	workDoneTotal float64
-	runningTime   float64
+	started          uint32
+	allDiffOneShares uint64
+	validShares      uint64
+	invalidShares    uint64
 
 	quit chan struct{}
 }
 
-// Compares a and b as big endian
-func hashSmaller(a, b []byte) bool {
-	for i := len(a) - 1; i >= 0; i-- {
-		if a[i] < b[i] {
-			return true
-		}
-		if a[i] > b[i] {
-			return false
-		}
+// Uint32EndiannessSwap swaps the endianness of a uint32.
+func Uint32EndiannessSwap(v uint32) uint32 {
+	return (v&0x000000FF)<<24 | (v&0x0000FF00)<<8 |
+		(v&0x00FF0000)>>8 | (v&0xFF000000)>>24
+}
+
+// rolloverExtraNonce rolls over the extraNonce if it goes over 0x00FFFFFF many
+// hashes, since the first byte is reserved for the ID.
+func rolloverExtraNonce(v *uint32) {
+	if *v&0x00FFFFFF == 0x00FFFFFF {
+		*v = *v & 0xFF000000
+	} else {
+		*v++
 	}
-	return false
 }
 
 func clError(status cl.CL_int, f string) error {
-	return fmt.Errorf("%s returned error %s (%d)", f, cl.ERROR_CODES_STRINGS[-status], status)
+	if -status < 0 || int(-status) > len(cl.ERROR_CODES_STRINGS) {
+		return fmt.Errorf("%s returned unknown error!")
+	}
+
+	return fmt.Errorf("%s returned error %s (%d)", f,
+		cl.ERROR_CODES_STRINGS[-status], status)
 }
 
-func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id, workDone chan []byte) (*Device, error) {
+func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id,
+	workDone chan []byte) (*Device, error) {
 	d := &Device{
 		index:      index,
 		platformID: platformID,
@@ -116,64 +155,74 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 
 	var status cl.CL_int
 
-	// Create the CL context
-	d.context = cl.CLCreateContext(nil, 1, []cl.CL_device_id{deviceID}, nil, nil, &status)
+	// Create the CL context.
+	d.context = cl.CLCreateContext(nil, 1, []cl.CL_device_id{deviceID},
+		nil, nil, &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateContext")
 	}
 
-	// Create the command queue
+	// Create the command queue.
 	d.queue = cl.CLCreateCommandQueue(d.context, deviceID, 0, &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateCommandQueue")
 	}
 
-	// Create the output buffer
-	d.outputBuffer = cl.CLCreateBuffer(d.context, cl.CL_MEM_READ_WRITE, uint32Size*outputBufferSize, nil, &status)
+	// Create the output buffer.
+	d.outputBuffer = cl.CLCreateBuffer(d.context, cl.CL_MEM_READ_WRITE,
+		uint32Size*outputBufferSize, nil, &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateBuffer")
 	}
 
-	// Load kernel source
+	// Load kernel source.
 	progSrc, progSize, err := loadProgramSource(cfg.ClKernel)
 	if err != nil {
 		return nil, fmt.Errorf("Could not load kernel source: %v", err)
 	}
 
-	// Create the program
-	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc[:], progSize[:], &status)
+	// Create the program.
+	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc[:],
+		progSize[:], &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateProgramWithSource")
 	}
 
-	// Build the program for the device
+	// Build the program for the device.
 	compilerOptions := ""
 	compilerOptions += fmt.Sprintf(" -D WORKSIZE=%d", localWorksize)
-	status = cl.CLBuildProgram(d.program, 1, []cl.CL_device_id{deviceID}, []byte(compilerOptions), nil, nil)
+	status = cl.CLBuildProgram(d.program, 1, []cl.CL_device_id{deviceID},
+		[]byte(compilerOptions), nil, nil)
 	if status != cl.CL_SUCCESS {
 		err = clError(status, "CLBuildProgram")
 
 		// Something went wrong! Print what it is.
 		var logSize cl.CL_size_t
-		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
+		status = cl.CLGetProgramBuildInfo(d.program, deviceID,
+			cl.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
 		if status != cl.CL_SUCCESS {
-			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
+			minrLog.Errorf("Could not obtain compilation error log: %v",
+				clError(status, "CLGetProgramBuildInfo"))
 		}
 		var program_log interface{}
-		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
+		status = cl.CLGetProgramBuildInfo(d.program, deviceID,
+			cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
 		if status != cl.CL_SUCCESS {
-			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
+			minrLog.Errorf("Could not obtain compilation error log: %v",
+				clError(status, "CLGetProgramBuildInfo"))
 		}
 		minrLog.Errorf("%s\n", program_log)
 
 		return nil, err
 	}
 
-	// Create the kernel
+	// Create the kernel.
 	d.kernel = cl.CLCreateKernel(d.program, []byte("search"), &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateKernel")
 	}
+
+	d.started = uint32(time.Now().Unix())
 
 	return d, nil
 }
@@ -210,27 +259,33 @@ func (d *Device) updateCurrentWork() {
 
 	d.work = *w
 	minrLog.Tracef("pre-nonce: %v", hex.EncodeToString(d.work.Data[:]))
-	// Set nonce2
-	binary.LittleEndian.PutUint32(d.work.Data[124+4*nonce2Word:], d.work.Nonce2)
+
+	// Bump and set the work ID if the work is new.
+	d.currentWorkID++
+	binary.LittleEndian.PutUint32(d.work.Data[128+4*nonce2Word:],
+		d.currentWorkID)
+
 	// Reset the hash state
 	copy(d.midstate[:], blake256.IV256[:])
 
 	// Hash the two first blocks
 	blake256.Block(d.midstate[:], d.work.Data[0:64], 512)
 	blake256.Block(d.midstate[:], d.work.Data[64:128], 1024)
-	minrLog.Tracef("midstate input data %v", hex.EncodeToString(d.work.Data[0:128]))
+	minrLog.Tracef("midstate input data for work update %v",
+		hex.EncodeToString(d.work.Data[0:128]))
 
 	// Convert the next block to uint32 array.
 	for i := 0; i < 16; i++ {
 		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4 : 132+i*4])
-		//minrLog.Tracef("lastblockin %v: %v", i, d.lastBlock[i])
 	}
-	minrLog.Tracef("data: %v", hex.EncodeToString(d.work.Data[:]))
+	minrLog.Tracef("work data for work update: %v",
+		hex.EncodeToString(d.work.Data[:]))
 }
 
 func (d *Device) Run() {
 	//d.testFoundCandidate()
 	//return
+
 	err := d.runDevice()
 	if err != nil {
 		minrLog.Errorf("Error on device: %v", err)
@@ -263,7 +318,8 @@ func (d *Device) testFoundCandidate() {
 	minrLog.Errorf("target: %v", d.work.Target)
 	minrLog.Errorf("nonce1 %x, nonce0: %x", n1, n0)
 
-	d.foundCandidate(n1, n0)
+	// d.foundCandidate(n1, n0, ts)
+
 	//need to match
 	//00000000df6ffb6059643a9215f95751baa7b1ed8aa93edfeb9a560ecb1d5884
 	//stratum submit {"params": ["test", "76df", "0200000000a461f2e3014335", "5783c78e", "e38c6e00"], "id": 4, "method": "mining.submit"}
@@ -272,8 +328,25 @@ func (d *Device) testFoundCandidate() {
 func (d *Device) runDevice() error {
 	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
-	globalWorksize := math.Exp2(float64(cfg.Intensity))
-	minrLog.Debugf("Intensity %v", cfg.Intensity)
+	var globalWorksize uint32
+	if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+		globalWorksize = 1 << uint32(cfg.IntensityInts[d.index])
+		minrLog.Debugf("GPU #%d: Intensity %v (work size: %v)", d.index,
+			cfg.IntensityInts[d.index], globalWorksize)
+	} else {
+		globalWorksize = uint32(cfg.WorkSizeInts[d.index])
+		intensity := math.Log2(float64(cfg.WorkSizeInts[d.index]))
+		minrLog.Debugf("GPU #%d: Work size: %v ('intensity' %v)", d.index,
+			cfg.WorkSizeInts[d.index], intensity)
+	}
+
+	// Bump the extraNonce for the device it's running on
+	// when you begin mining. This ensures each GPU is doing
+	// different work. If the extraNonce has already been
+	// set for valid work, restore that.
+	d.extraNonce += uint32(d.index) << 24
+	d.lastBlock[nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+
 	var status cl.CL_int
 	for {
 		d.updateCurrentWork()
@@ -284,25 +357,33 @@ func (d *Device) runDevice() error {
 		default:
 		}
 
-		// Increment nonce1
-		//d.lastBlock[nonce1Word]++
-		d.work.Nonce2++
-		var tmpBytes = make([]byte, 4)
-		binary.LittleEndian.PutUint32(tmpBytes, d.work.Nonce2)
-		d.lastBlock[nonce1Word] = binary.BigEndian.Uint32(tmpBytes)
+		// Increment extraNonce.
+		rolloverExtraNonce(&d.extraNonce)
+		d.lastBlock[nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+
+		// Update the timestamp. Only solo work allows you to roll
+		// the timestamp.
+		ts := d.work.JobTime
+		if d.work.isSolo {
+			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
+			ts = d.work.JobTime + diffSeconds
+		}
+		d.lastBlock[timestampWord] = Uint32EndiannessSwap(ts)
 
 		// arg 0: pointer to the buffer
 		obuf := d.outputBuffer
-		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(obuf)), unsafe.Pointer(&obuf))
+		status = cl.CLSetKernelArg(d.kernel, 0,
+			cl.CL_size_t(unsafe.Sizeof(obuf)),
+			unsafe.Pointer(&obuf))
 		if status != cl.CL_SUCCESS {
 			return clError(status, "CLSetKernelArg")
 		}
 
 		// args 1..8: midstate
 		for i := 0; i < 8; i++ {
-			//minrLog.Tracef("mid: %v: %v", i+1, d.midstate[i])
 			ms := d.midstate[i]
-			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&ms))
+			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1),
+				uint32Size, unsafe.Pointer(&ms))
 			if status != cl.CL_SUCCESS {
 				return clError(status, "CLSetKernelArg")
 			}
@@ -315,8 +396,8 @@ func (d *Device) runDevice() error {
 				i2++
 			}
 			lb := d.lastBlock[i2]
-			//minrLog.Tracef("lastblockused: %v: %v", i+9, lb)
-			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&lb))
+			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9),
+				uint32Size, unsafe.Pointer(&lb))
 			if status != cl.CL_SUCCESS {
 				return clError(status, "CLSetKernelArg")
 			}
@@ -324,57 +405,82 @@ func (d *Device) runDevice() error {
 		}
 
 		// Clear the found count from the buffer
-		status = cl.CLEnqueueWriteBuffer(d.queue, d.outputBuffer, cl.CL_FALSE, 0, uint32Size, unsafe.Pointer(&zeroSlice[0]), 0, nil, nil)
+		status = cl.CLEnqueueWriteBuffer(d.queue, d.outputBuffer,
+			cl.CL_FALSE, 0, uint32Size, unsafe.Pointer(&zeroSlice[0]),
+			0, nil, nil)
 		if status != cl.CL_SUCCESS {
 			return clError(status, "CLEnqueueWriteBuffer")
 		}
 
-		// Execute the kernel
+		// Execute the kernel and follow its execution time.
+		currentTime := time.Now()
 		var globalWorkSize [1]cl.CL_size_t
 		globalWorkSize[0] = cl.CL_size_t(globalWorksize)
 		var localWorkSize [1]cl.CL_size_t
 		localWorkSize[0] = localWorksize
-		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil, globalWorkSize[:], localWorkSize[:], 0, nil, nil)
+		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil,
+			globalWorkSize[:], localWorkSize[:], 0, nil, nil)
 		if status != cl.CL_SUCCESS {
 			return clError(status, "CLEnqueueNDRangeKernel")
 		}
 
-		// Read the output buffer
-		cl.CLEnqueueReadBuffer(d.queue, d.outputBuffer, cl.CL_TRUE, 0, uint32Size*outputBufferSize, unsafe.Pointer(&outputData[0]), 0, nil, nil)
+		// Read the output buffer.
+		cl.CLEnqueueReadBuffer(d.queue, d.outputBuffer, cl.CL_TRUE, 0,
+			uint32Size*outputBufferSize, unsafe.Pointer(&outputData[0]), 0,
+			nil, nil)
 		if status != cl.CL_SUCCESS {
 			return clError(status, "CLEnqueueReadBuffer")
 		}
 
 		for i := uint32(0); i < outputData[0]; i++ {
-			minrLog.Debugf("Found candidate: %d", outputData[i+1])
-			d.foundCandidate(d.lastBlock[nonce1Word], outputData[i+1])
+			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
+				"extraNonce %08x, workID %08x, timestamp %08x",
+				d.index, i+1, outputData[i+1], d.lastBlock[nonce1Word],
+				Uint32EndiannessSwap(d.currentWorkID),
+				d.lastBlock[timestampWord])
+
+			// Assess the work. If it's below target, it'll be rejected
+			// here. The mining algorithm currently sends this function any
+			// difficulty 1 shares.
+			d.foundCandidate(d.lastBlock[timestampWord], outputData[i+1],
+				d.lastBlock[nonce1Word])
 		}
 
-		d.workDoneLast += globalWorksize
-		d.workDoneTotal += globalWorksize
+		elapsedTime := time.Since(currentTime)
+		minrLog.Tracef("GPU #%d: Kernel execution to read time: %v", d.index,
+			elapsedTime)
 	}
 }
 
-func (d *Device) foundCandidate(nonce1 uint32, nonce0 uint32) {
-	// Construct the final block header
+func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
+	// Construct the final block header.
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
-	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)
+	binary.BigEndian.PutUint32(data[128+4*timestampWord:], ts)
 	binary.BigEndian.PutUint32(data[128+4*nonce0Word:], nonce0)
-	hash := chainhash.HashFuncB(data[0:180])
+	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)
+	hash := chainhash.HashFuncH(data[0:180])
 
-	newHash, err := chainhash.NewHashFromStr(hex.EncodeToString(reverse(hash[:])))
-	if err != nil {
-		minrLog.Error(err)
-	}
-	minrLog.Errorf("hash: %x", hash)
-	minrLog.Errorf("newHash: %v", newHash)
-	hashNum := blockchain.ShaHashToBig(newHash)
-	if hashNum.Cmp(d.work.Target) > 0 {
-		minrLog.Infof("Hash %s below target %s", hex.EncodeToString(reverse(hash[:])), d.work.Target)
-
+	// Hashes that reach this logic and fail the minimal proof of
+	// work check are considered to be hardware errors.
+	hashNum := blockchain.ShaHashToBig(&hash)
+	if hashNum.Cmp(chainParams.PowLimit) > 0 {
+		minrLog.Errorf("GPU #%d: Hardware error found, hash %v above "+
+			"minimum target %032x", d.index, hash, d.work.Target.Bytes())
+		d.invalidShares++
+		return
 	} else {
-		minrLog.Infof("Found hash!!  %s", hex.EncodeToString(hash[:]))
+		d.allDiffOneShares++
+	}
+
+	// Assess versus the pool or daemon target.
+	if hashNum.Cmp(d.work.Target) > 0 {
+		minrLog.Debugf("GPU #%d: Hash %v bigger than target %032x (boo)",
+			d.index, hash, d.work.Target.Bytes())
+	} else {
+		minrLog.Infof("GPU #%d: Found hash with work below target! %v (yay)",
+			d.index, hash)
+		d.validShares++
 		d.workDone <- data
 	}
 }
@@ -426,11 +532,20 @@ func getDeviceInfo(id cl.CL_device_id,
 }
 
 func (d *Device) PrintStats() {
-	alpha := 0.95
-	d.workDoneEMA = d.workDoneEMA*alpha + d.workDoneLast*(1-alpha)
-	d.workDoneLast = 0
-	d.runningTime += 5.0
+	secondsElapsed := uint32(time.Now().Unix()) - d.started
+	if secondsElapsed == 0 {
+		return
+	}
 
-	minrLog.Infof("GPU #%d: %s, EMA %s avg %s", d.index, d.deviceName,
-		formatHashrate(d.workDoneEMA), formatHashrate(d.workDoneTotal/d.runningTime))
+	diffOneShareHashesAvg := uint64(0x00000000FFFFFFFF)
+	averageHashRate := (float64(diffOneShareHashesAvg) *
+		float64(d.allDiffOneShares)) /
+		float64(secondsElapsed)
+
+	minrLog.Infof("GPU #%d (%s) reporting average hash rate %v, %v/%v valid work",
+		d.index,
+		d.deviceName,
+		formatHashrate(averageHashRate),
+		d.validShares,
+		d.validShares+d.invalidShares)
 }

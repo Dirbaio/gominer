@@ -158,7 +158,8 @@ func GetWork() (*Work, error) {
 	}
 
 	if res.Error != nil {
-		return nil, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code, res.Error.Message)
+		return nil, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code,
+			res.Error.Message)
 	}
 
 	data, err := hex.DecodeString(res.Result.Data)
@@ -166,14 +167,16 @@ func GetWork() (*Work, error) {
 		return nil, err
 	}
 	if len(data) != 192 {
-		return nil, fmt.Errorf("Wrong data length: got %d, expected 192", len(data))
+		return nil, fmt.Errorf("Wrong data length: got %d, expected 192",
+			len(data))
 	}
 	target, err := hex.DecodeString(res.Result.Target)
 	if err != nil {
 		return nil, err
 	}
 	if len(target) != 32 {
-		return nil, fmt.Errorf("Wrong target length: got %d, expected 32", len(target))
+		return nil, fmt.Errorf("Wrong target length: got %d, expected 32",
+			len(target))
 	}
 	bigTarget := new(big.Int)
 	bigTarget.SetString(hex.EncodeToString(target), 16)
@@ -202,7 +205,7 @@ func GetPoolWork(pool *Stratum) (*Work, error) {
 		}
 
 		intJob, _ := strconv.ParseInt(pool.PoolWork.JobID, 16, 0)
-		poolLog.Infof("job %v height %v", intJob, pool.PoolWork.Height)
+		poolLog.Debugf("new job %v height %v", intJob, pool.PoolWork.Height)
 
 		return pool.PoolWork.Work, nil
 	}
@@ -224,7 +227,8 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	}
 	url := protocol + "://" + cfg.RPCServer
 	hexData := hex.EncodeToString(data)
-	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": ["` + hexData + `"], "id": 1}`)
+	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": ["` +
+		hexData + `"], "id": 1}`)
 	bodyBuff := bytes.NewBuffer(jsonStr)
 	httpRequest, err := http.NewRequest("POST", url, bodyBuff)
 	if err != nil {
@@ -255,7 +259,8 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	}
 
 	if httpResponse.Status != "200 OK" {
-		return false, fmt.Errorf("error calling getwork (%s): %s", httpResponse.Status, body)
+		return false, fmt.Errorf("error calling getwork (%s): %s",
+			httpResponse.Status, body)
 	}
 
 	var res getWorkSubmitResponseJson
@@ -265,7 +270,8 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	}
 
 	if res.Error != nil {
-		return false, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code, res.Error.Message)
+		return false, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code,
+			res.Error.Message)
 	}
 
 	return res.Result, nil
@@ -273,19 +279,18 @@ func GetWorkSubmit(data []byte) (bool, error) {
 
 // GetPoolWorkSubmit sends the result to the stratum enabled pool
 func GetPoolWorkSubmit(data []byte, pool *Stratum) (bool, error) {
-
 	sub, err := pool.PrepSubmit(data)
 	if err != nil {
 		return false, err
 	}
 
-	// json encode
+	// JSON encode.
 	m, err := json.Marshal(sub)
 	if err != nil {
 		return false, err
 	}
 
-	// send
+	// Send.
 	poolLog.Tracef("> %s", m)
 	_, err = pool.Conn.Write(m)
 	if err != nil {
@@ -295,9 +300,8 @@ func GetPoolWorkSubmit(data []byte, pool *Stratum) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	pool.submitted = true
 
-	pool.PoolWork.Work = nil
-
-	return false, nil
+	return true, nil
 }

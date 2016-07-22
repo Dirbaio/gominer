@@ -54,8 +54,8 @@ __kernel void search(
 	const uint MB,
 	const uint MC
 )
-{
-	/* Load the block header and padding */
+{	
+	// Load the block header and padding.
 	const uint M3 = get_global_id(0);
 	const uint MD = 0x80000001UL;
 	const uint ME = 0x00000000UL;
@@ -82,7 +82,7 @@ __kernel void search(
 	uint V8, V9, VA, VB, VC, VD, VE, VF;
 	uint pre7;
 
-	/* Load the midstate and initialize */
+	// Load the midstate and initialize.
 	V0 = h0;
 	V1 = h1;
 	V2 = h2;
@@ -101,8 +101,7 @@ __kernel void search(
 	VE = cst6;
 	VF = cst7;
 
-	/* 14 rounds */
-
+	// 14 rounds. 
 	V0 = V0 + (M0 ^ cst1); V0 = V0 + V4; VC = VC ^ V0; VC = SWAP(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 12U); V1 = V1 + (M2 ^ cst3); V1 = V1 + V5; VD = VD ^ V1; VD = SWAP(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 12U); V2 = V2 + (M4 ^ cst5); V2 = V2 + V6; VE = VE ^ V2; VE = SWAP(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 12U); V3 = V3 + (M6 ^ cst7); V3 = V3 + V7; VF = VF ^ V3; VF = SWAP(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 12U); V2 = V2 + (M5 ^ cst4); V2 = V2 + V6; VE = VE ^ V2; VE = ROTR8(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 7U); V3 = V3 + (M7 ^ cst6); V3 = V3 + V7; VF = VF ^ V3; VF = ROTR8(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 7U); V1 = V1 + (M3 ^ cst2); V1 = V1 + V5; VD = VD ^ V1; VD = ROTR8(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 7U); V0 = V0 + (M1 ^ cst0); V0 = V0 + V4; VC = VC ^ V0; VC = ROTR8(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 7U); V0 = V0 + (M8 ^ cst9); V0 = V0 + V5; VF = VF ^ V0; VF = SWAP(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 12U); V1 = V1 + (MA ^ cstB); V1 = V1 + V6; VC = VC ^ V1; VC = SWAP(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 12U); V2 = V2 + (MC ^ cstD); V2 = V2 + V7; VD = VD ^ V2; VD = SWAP(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 12U); V3 = V3 + (ME ^ cstF); V3 = V3 + V4; VE = VE ^ V3; VE = SWAP(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 12U); V2 = V2 + (MD ^ cstC); V2 = V2 + V7; VD = VD ^ V2; VD = ROTR8(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 7U); V3 = V3 + (MF ^ cstE); V3 = V3 + V4; VE = VE ^ V3; VE = ROTR8(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 7U); V1 = V1 + (MB ^ cstA); V1 = V1 + V6; VC = VC ^ V1; VC = ROTR8(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 7U); V0 = V0 + (M9 ^ cst8); V0 = V0 + V5; VF = VF ^ V0; VF = ROTR8(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 7U);
 	V0 = V0 + (ME ^ cstA); V0 = V0 + V4; VC = VC ^ V0; VC = SWAP(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 12U); V1 = V1 + (M4 ^ cst8); V1 = V1 + V5; VD = VD ^ V1; VD = SWAP(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 12U); V2 = V2 + (M9 ^ cstF); V2 = V2 + V6; VE = VE ^ V2; VE = SWAP(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 12U); V3 = V3 + (MD ^ cst6); V3 = V3 + V7; VF = VF ^ V3; VF = SWAP(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 12U); V2 = V2 + (MF ^ cst9); V2 = V2 + V6; VE = VE ^ V2; VE = ROTR8(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 7U); V3 = V3 + (M6 ^ cstD); V3 = V3 + V7; VF = VF ^ V3; VF = ROTR8(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 7U); V1 = V1 + (M8 ^ cst4); V1 = V1 + V5; VD = VD ^ V1; VD = ROTR8(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 7U); V0 = V0 + (MA ^ cstE); V0 = V0 + V4; VC = VC ^ V0; VC = ROTR8(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 7U); V0 = V0 + (M1 ^ cstC); V0 = V0 + V5; VF = VF ^ V0; VF = SWAP(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 12U); V1 = V1 + (M0 ^ cst2); V1 = V1 + V6; VC = VC ^ V1; VC = SWAP(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 12U); V2 = V2 + (MB ^ cst7); V2 = V2 + V7; VD = VD ^ V2; VD = SWAP(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 12U); V3 = V3 + (M5 ^ cst3); V3 = V3 + V4; VE = VE ^ V3; VE = SWAP(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 12U); V2 = V2 + (M7 ^ cstB); V2 = V2 + V7; VD = VD ^ V2; VD = ROTR8(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 7U); V3 = V3 + (M3 ^ cst5); V3 = V3 + V4; VE = VE ^ V3; VE = ROTR8(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 7U); V1 = V1 + (M2 ^ cst0); V1 = V1 + V6; VC = VC ^ V1; VC = ROTR8(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 7U); V0 = V0 + (MC ^ cst1); V0 = V0 + V5; VF = VF ^ V0; VF = ROTR8(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 7U);
 	V0 = V0 + (MB ^ cst8); V0 = V0 + V4; VC = VC ^ V0; VC = SWAP(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 12U); V1 = V1 + (MC ^ cst0); V1 = V1 + V5; VD = VD ^ V1; VD = SWAP(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 12U); V2 = V2 + (M5 ^ cst2); V2 = V2 + V6; VE = VE ^ V2; VE = SWAP(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 12U); V3 = V3 + (MF ^ cstD); V3 = V3 + V7; VF = VF ^ V3; VF = SWAP(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 12U); V2 = V2 + (M2 ^ cst5); V2 = V2 + V6; VE = VE ^ V2; VE = ROTR8(VE); VA = VA + VE; V6 = V6 ^ VA; V6 = ROTR(V6, 7U); V3 = V3 + (MD ^ cstF); V3 = V3 + V7; VF = VF ^ V3; VF = ROTR8(VF); VB = VB + VF; V7 = V7 ^ VB; V7 = ROTR(V7, 7U); V1 = V1 + (M0 ^ cstC); V1 = V1 + V5; VD = VD ^ V1; VD = ROTR8(VD); V9 = V9 + VD; V5 = V5 ^ V9; V5 = ROTR(V5, 7U); V0 = V0 + (M8 ^ cstB); V0 = V0 + V4; VC = VC ^ V0; VC = ROTR8(VC); V8 = V8 + VC; V4 = V4 ^ V8; V4 = ROTR(V4, 7U); V0 = V0 + (MA ^ cstE); V0 = V0 + V5; VF = VF ^ V0; VF = SWAP(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 12U); V1 = V1 + (M3 ^ cst6); V1 = V1 + V6; VC = VC ^ V1; VC = SWAP(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 12U); V2 = V2 + (M7 ^ cst1); V2 = V2 + V7; VD = VD ^ V2; VD = SWAP(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 12U); V3 = V3 + (M9 ^ cst4); V3 = V3 + V4; VE = VE ^ V3; VE = SWAP(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 12U); V2 = V2 + (M1 ^ cst7); V2 = V2 + V7; VD = VD ^ V2; VD = ROTR8(VD); V8 = V8 + VD; V7 = V7 ^ V8; V7 = ROTR(V7, 7U); V3 = V3 + (M4 ^ cst9); V3 = V3 + V4; VE = VE ^ V3; VE = ROTR8(VE); V9 = V9 + VE; V4 = V4 ^ V9; V4 = ROTR(V4, 7U); V1 = V1 + (M6 ^ cst3); V1 = V1 + V6; VC = VC ^ V1; VC = ROTR8(VC); VB = VB + VC; V6 = V6 ^ VB; V6 = ROTR(V6, 7U); V0 = V0 + (ME ^ cstA); V0 = V0 + V5; VF = VF ^ V0; VF = ROTR8(VF); VA = VA + VF; V5 = V5 ^ VA; V5 = ROTR(V5, 7U);
@@ -154,9 +153,9 @@ __kernel void search(
 	}
 	*/
 
+        // Push this share.
 	if (pre7 ^ V7 ^ VF) return;
-
-	/* Push this share */
-	//output[output[0xFF]++] = M3;
+        
+	// Update nonce.
 	output[++output[0]] = M3;
 }

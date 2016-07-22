@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/decred/gominer/cl"
@@ -25,12 +27,14 @@ func getCLPlatforms() ([]cl.CL_platform_id, error) {
 // getCLDevices returns the list of devices for the given platform.
 func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
 	var numDevices cl.CL_uint
-	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil, &numDevices)
+	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil,
+		&numDevices)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLGetDeviceIDs")
 	}
 	devices := make([]cl.CL_device_id, numDevices)
-	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices, devices, nil)
+	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices,
+		devices, nil)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLGetDeviceIDs")
 	}
@@ -44,6 +48,11 @@ type Miner struct {
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
 	pool             *Stratum
+
+	started       uint32
+	validShares   uint64
+	staleShares   uint64
+	invalidShares uint64
 }
 
 func NewMiner() (*Miner, error) {
@@ -72,6 +81,21 @@ func NewMiner() (*Miner, error) {
 		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
 	}
 
+	// Check the number of intensities/work sizes versus the number of devices.
+	if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+		if len(cfg.Intensity) != len(deviceIDs) {
+			return nil, fmt.Errorf("Intensities supplied, but number supplied "+
+				"did not match the number of GPUs (got %v, want %v)",
+				len(cfg.Intensity), len(deviceIDs))
+		}
+	} else {
+		if len(cfg.WorkSize) != len(deviceIDs) {
+			return nil, fmt.Errorf("WorkSize supplied, but number supplied "+
+				"did not match the number of GPUs (got %v, want %v)",
+				len(cfg.WorkSize), len(deviceIDs))
+		}
+	}
+
 	m.devices = make([]*Device, len(deviceIDs))
 	for i, deviceID := range deviceIDs {
 		var err error
@@ -80,6 +104,8 @@ func NewMiner() (*Miner, error) {
 			return nil, err
 		}
 	}
+
+	m.started = uint32(time.Now().Unix())
 
 	return m, nil
 }
@@ -96,17 +122,56 @@ func (m *Miner) workSubmitThread() {
 			if m.pool == nil {
 				accepted, err := GetWorkSubmit(data)
 				if err != nil {
+					inval := atomic.LoadUint64(&m.invalidShares)
+					inval++
+					atomic.StoreUint64(&m.invalidShares, inval)
+
 					minrLog.Errorf("Error submitting work: %v", err)
 				} else {
-					minrLog.Errorf("Submitted work successfully: %v", accepted)
+					if accepted {
+						val := atomic.LoadUint64(&m.validShares)
+						val++
+						atomic.StoreUint64(&m.validShares, val)
+
+						minrLog.Debugf("Submitted work successfully: %v",
+							accepted)
+					} else {
+						inval := atomic.LoadUint64(&m.invalidShares)
+						inval++
+						atomic.StoreUint64(&m.invalidShares, inval)
+					}
+
 					m.needsWorkRefresh <- struct{}{}
 				}
 			} else {
 				accepted, err := GetPoolWorkSubmit(data, m.pool)
 				if err != nil {
-					minrLog.Errorf("Error submitting work to pool: %v", err)
+					if err == ErrStatumStaleWork {
+						stale := atomic.LoadUint64(&m.staleShares)
+						stale++
+						atomic.StoreUint64(&m.staleShares, stale)
+					} else {
+						inval := atomic.LoadUint64(&m.invalidShares)
+						inval++
+						atomic.StoreUint64(&m.invalidShares, inval)
+
+						minrLog.Errorf("Error submitting work to pool: %v", err)
+					}
 				} else {
-					minrLog.Errorf("Submitted work to pool successfully: %v", accepted)
+					if accepted {
+						val := atomic.LoadUint64(&m.validShares)
+						val++
+						atomic.StoreUint64(&m.validShares, val)
+
+						minrLog.Debugf("Submitted work to pool successfully: %v",
+							accepted)
+					} else {
+						inval := atomic.LoadUint64(&m.invalidShares)
+						inval++
+						atomic.StoreUint64(&m.invalidShares, inval)
+
+						m.invalidShares++
+					}
 					m.needsWorkRefresh <- struct{}{}
 				}
 			}
@@ -117,7 +182,7 @@ func (m *Miner) workSubmitThread() {
 func (m *Miner) workRefreshThread() {
 	defer m.wg.Done()
 
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(100 * time.Millisecond)
 	defer t.Stop()
 
 	for {
@@ -132,12 +197,14 @@ func (m *Miner) workRefreshThread() {
 				}
 			}
 		} else {
-			work, err := GetPoolWork(m.pool)
-			if err != nil {
-				minrLog.Errorf("Error in getpoolwork: %v", err)
-			} else {
-				for _, d := range m.devices {
-					d.SetWork(work)
+			if m.pool.PoolWork.NewWork {
+				work, err := GetPoolWork(m.pool)
+				if err != nil {
+					minrLog.Errorf("Error in getpoolwork: %v", err)
+				} else {
+					for _, d := range m.devices {
+						d.SetWork(work)
+					}
 				}
 			}
 		}
@@ -157,6 +224,17 @@ func (m *Miner) printStatsThread() {
 	defer t.Stop()
 
 	for {
+		valid := atomic.LoadUint64(&m.validShares)
+		minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v",
+			valid,
+			atomic.LoadUint64(&m.invalidShares),
+			atomic.LoadUint64(&m.staleShares))
+
+		secondsElapsed := uint32(time.Now().Unix()) - m.started
+		if (secondsElapsed / 60) > 0 {
+			utility := float64(valid) / (float64(secondsElapsed) / float64(60))
+			minrLog.Infof("Global utility (accepted shares/min): %v", utility)
+		}
 		for _, d := range m.devices {
 			d.PrintStats()
 		}

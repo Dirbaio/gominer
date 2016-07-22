@@ -17,32 +17,38 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 
 	"github.com/decred/dcrd/chaincfg"
+	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
 )
 
 var chainParams = &chaincfg.MainNetParams
 
+// ErrStatumStaleWork indicates that the work to send to the pool was stale.
+var ErrStatumStaleWork = fmt.Errorf("Stale work, throwing away")
+
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
 type Stratum struct {
-	Pool      string
-	User      string
-	Pass      string
-	Conn      net.Conn
-	Reader    *bufio.Reader
-	ID        uint64
-	authID    uint64
-	subID     uint64
-	submitID  uint64
-	Diff      float64
-	Target    *big.Int
-	submitted bool
-	PoolWork  NotifyWork
+	Pool          string
+	User          string
+	Pass          string
+	Conn          net.Conn
+	Reader        *bufio.Reader
+	ID            uint64
+	authID        uint64
+	subID         uint64
+	submitID      uint64
+	Diff          float64
+	Target        *big.Int
+	submitted     bool
+	PoolWork      NotifyWork
+	latestJobTime uint32
 }
 
 // NotifyWork holds all the info recieved from a mining.notify message along
@@ -148,10 +154,12 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 	stratum.Pool = pool
 	stratum.User = user
 	stratum.Pass = pass
+
 	// We will set it for sure later but this really should be the value and
 	// setting it here will prevent so incorrect matches based on the
 	// default 0 value.
 	stratum.authID = 2
+
 	// Target for share is 1 unless we hear otherwise.
 	stratum.Diff = 1
 	stratum.Target = diffToTarget(stratum.Diff)
@@ -217,12 +225,14 @@ func (s *Stratum) Listen() {
 			}
 			continue
 		}
+
 		poolLog.Debug(strings.TrimSuffix(result, "\n"))
 		resp, err := s.Unmarshal([]byte(result))
 		if err != nil {
 			poolLog.Error(err)
 			continue
 		}
+
 		switch resp.(type) {
 		case *BasicReply:
 			aResp := resp.(*BasicReply)
@@ -241,6 +251,7 @@ func (s *Stratum) Listen() {
 				}
 				s.submitted = false
 			}
+
 		case StratumMsg:
 			nResp := resp.(StratumMsg)
 			poolLog.Trace(nResp)
@@ -267,6 +278,7 @@ func (s *Stratum) Listen() {
 					// the channel to end everything.
 					return
 				}
+
 			case "client.get_version":
 				poolLog.Debug("get_version request received.")
 				msg := StratumMsg{
@@ -290,18 +302,18 @@ func (s *Stratum) Listen() {
 					continue
 				}
 			}
+
 		case NotifyRes:
 			nResp := resp.(NotifyRes)
 			s.PoolWork.JobID = nResp.JobID
 			s.PoolWork.CB1 = nResp.GenTX1
-			//poolLog.Trace("CB1: " + spew.Sdump(s.PoolWork.CB1))
-			//height := nResp.GenTX1[184:188]
 			heightHex := nResp.GenTX1[186:188] + nResp.GenTX1[184:186]
 			height, err := strconv.ParseInt(heightHex, 16, 32)
 			if err != nil {
 				poolLog.Tracef("failed to parse height %v", err)
 				height = 0
 			}
+
 			s.PoolWork.Height = height
 			s.PoolWork.CB2 = nResp.GenTX2
 			s.PoolWork.Hash = nResp.Hash
@@ -311,17 +323,20 @@ func (s *Stratum) Listen() {
 			if err != nil {
 				poolLog.Error(err)
 			}
+
 			s.PoolWork.Ntime = nResp.Ntime
 			s.PoolWork.NtimeDelta = parsedNtime - time.Now().Unix()
 			s.PoolWork.Clean = nResp.CleanJobs
 			s.PoolWork.NewWork = true
 			poolLog.Trace("notify: ", spew.Sdump(nResp))
+
 		case *SubscribeReply:
 			nResp := resp.(*SubscribeReply)
 			s.PoolWork.ExtraNonce1 = nResp.ExtraNonce1
 			s.PoolWork.ExtraNonce2Length = nResp.ExtraNonce2Length
 			poolLog.Info("Subscribe reply received.")
 			poolLog.Trace(spew.Sdump(resp))
+
 		default:
 			poolLog.Info("Unhandled message: ", result)
 		}
@@ -399,7 +414,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		return nil, err
 	}
 	// decode command
-	// Not everyone has a method
+	// Not everyone has a method.
 	err = json.Unmarshal(objmap["method"], &method)
 	if err != nil {
 		method = ""
@@ -497,6 +512,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			for i := 0; i < len(innerMsg); i++ {
 				if innerMsg[i][0] == "mining.notify" {
 					resp.SubscribeID = innerMsg[i][1]
@@ -511,8 +527,8 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 					// we ignore.
 				}
 			}
-
 		}
+
 		resp.ExtraNonce1 = resi[1].(string)
 		resp.ExtraNonce2Length = resi[2].(float64)
 		return resp, nil
@@ -614,6 +630,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		}
 		nres.CleanJobs = cleanJobs
 		return nres, nil
+
 	case "mining.set_difficulty":
 		poolLog.Trace("Received new difficulty.")
 		var resi []interface{}
@@ -636,6 +653,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		nres.Params = params
 		poolLog.Infof("Stratum difficulty set to %v", difficulty)
 		return nres, nil
+
 	case "client.show_message":
 		var resi []interface{}
 		err := json.Unmarshal(objmap["result"], &resi)
@@ -652,6 +670,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		params = append(params, msg)
 		nres.Params = params
 		return nres, nil
+
 	case "client.get_version":
 		var nres = StratumMsg{}
 		var id uint64
@@ -662,6 +681,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		nres.Method = method
 		nres.ID = id
 		return nres, nil
+
 	case "client.reconnect":
 		var nres = StratumMsg{}
 		var id uint64
@@ -700,6 +720,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		nres.Params = []string{hostname, port, wait}
 
 		return nres, nil
+
 	default:
 		resp := &StratumRsp{}
 		err := json.Unmarshal(blob, &resp)
@@ -712,15 +733,15 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 
 // PrepWork converts the stratum notify to getwork style data for mining.
 func (s *Stratum) PrepWork() error {
-
-	// Build final extranonce
+	// Build final extranonce, which is basically the pool user and worker
+	// ID.
 	en1, err := hex.DecodeString(s.PoolWork.ExtraNonce1)
 	if err != nil {
 		poolLog.Error("Error decoding ExtraNonce1.")
 		return err
 	}
-	poolLog.Debugf("en1 %v s.PoolWork.ExtraNonce1 %v", en1, s.PoolWork.ExtraNonce1)
-	// Work out padding
+
+	// Work out padding.
 	tmp := []string{"%0", strconv.Itoa(int(s.PoolWork.ExtraNonce2Length) * 2), "x"}
 	fmtString := strings.Join(tmp, "")
 	en2, err := hex.DecodeString(fmt.Sprintf(fmtString, s.PoolWork.ExtraNonce2))
@@ -728,46 +749,23 @@ func (s *Stratum) PrepWork() error {
 		poolLog.Error("Error decoding ExtraNonce2.")
 		return err
 	}
-	poolLog.Tracef("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
 	extraNonce := append(en1[:], en2[:]...)
-	poolLog.Tracef("extraNonce %v", extraNonce)
 
-	// Increase extranonce2
-	s.PoolWork.ExtraNonce2++
-
-	// Put coinbase transaction together
-
+	// Put coinbase transaction together.
 	cb1, err := hex.DecodeString(s.PoolWork.CB1)
 	if err != nil {
 		poolLog.Error("Error decoding Coinbase pt 1.")
 		return err
 	}
-	poolLog.Debugf("cb1 %v s.PoolWork.CB1 %v", cb1, s.PoolWork.CB1)
 
-	// I've never actually seen a cb2.
-	cb2, err := hex.DecodeString(s.PoolWork.CB2)
-	if err != nil {
-		poolLog.Error("Error decoding Coinbase pt 2.")
-		return err
-	}
-	poolLog.Debugf("cb2 %v s.PoolWork.CB2 %v", cb2, s.PoolWork.CB2)
+	// cb2 is never actually sent, so don't try to decode it.
 
-	cb := append(cb1[:], extraNonce[:]...)
-	cb = append(cb[:], cb2[:]...)
-	poolLog.Debugf("cb %v", cb)
-
-	// Calculate merkle root
-	// I have never seen anything sent in the merkle tree
-	// sent by the pool so not much I can do here.
-	// Confirmed in ccminer code.
-	// Same for StakeRoot
-
-	// Generate current ntime
+	// Generate current ntime.
 	ntime := time.Now().Unix() + s.PoolWork.NtimeDelta
 
-	poolLog.Tracef("ntime: %v", ntime)
+	poolLog.Tracef("ntime: %x", ntime)
 
-	// Serialize header
+	// Serialize header.
 	bh := wire.BlockHeader{}
 	v, err := reverseToInt(s.PoolWork.Version)
 	if err != nil {
@@ -786,17 +784,15 @@ func (s *Stratum) PrepWork() error {
 	t := time.Now().Unix() + s.PoolWork.NtimeDelta
 	bh.Timestamp = time.Unix(t, 0)
 	bh.Nonce = 0
-	// Serialized version
+
+	// Serialized version.
 	blockHeader, err := bh.Bytes()
 	if err != nil {
 		return err
 	}
 
 	data := blockHeader
-	poolLog.Debugf("data0 %v", data)
-	poolLog.Tracef("data len %v", len(data))
 	copy(data[31:139], cb1[0:108])
-	poolLog.Debugf("data1 %v", data)
 
 	var workdata [180]byte
 	workPosition := 0
@@ -807,8 +803,6 @@ func (s *Stratum) PrepWork() error {
 		return err
 	}
 	copy(workdata[workPosition:], version.Bytes())
-	poolLog.Debugf("appended version.Bytes() %v", version.Bytes())
-	poolLog.Tracef("partial workdata (version): %v", hex.EncodeToString(workdata[:]))
 
 	prevHash := revHash(s.PoolWork.Hash)
 	p, err := hex.DecodeString(prevHash)
@@ -819,68 +813,50 @@ func (s *Stratum) PrepWork() error {
 
 	workPosition += 4
 	copy(workdata[workPosition:], p)
-	poolLog.Tracef("partial workdata (previous hash): %v", hex.EncodeToString(workdata[:]))
-	poolLog.Debugf("prevHash %v", prevHash)
-
 	workPosition += 32
 	copy(workdata[workPosition:], cb1[0:108])
-	poolLog.Tracef("partial workdata (cb1): %v", hex.EncodeToString(workdata[:]))
-
 	workPosition += 108
 	copy(workdata[workPosition:], extraNonce)
-	poolLog.Debugf("extranonce: %v", hex.EncodeToString(extraNonce))
-	poolLog.Tracef("partial workdata (extranonce): %v", hex.EncodeToString(workdata[:]))
 
 	var randomBytes = make([]byte, 4)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
 		poolLog.Errorf("Unable to generate random bytes")
+		return err
 	}
 	workPosition += 4
-	// XXX would be nice to enable a static 'random' number here for tests
-	//binary.LittleEndian.PutUint32(randomBytes, 4066485248)
-	poolLog.Tracef("Random data: %v at: %v", randomBytes, workPosition)
-	copy(workdata[workPosition:], randomBytes)
 
-	poolLog.Debugf("workdata len %v", len(workdata))
-	poolLog.Tracef("workdata %v", hex.EncodeToString(workdata[:]))
+	var workData [192]byte
+	copy(workData[:], workdata[:])
+	givenTs := binary.LittleEndian.Uint32(
+		workData[128+4*timestampWord : 132+4*timestampWord])
+	atomic.StoreUint32(&s.latestJobTime, givenTs)
 
-	var w Work
-	/*var empty = []byte{
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00,
-	}
-	copy(w.Data[:], empty[:])*/
-	copy(w.Data[:], workdata[:])
-	w.Target = s.Target
-	w.Nonce2 = s.PoolWork.Nonce2
-	poolLog.Tracef("final data %v, target %v", hex.EncodeToString(w.Data[:]), w.Target)
-	s.PoolWork.Work = &w
+	w := NewWork(workData, s.Target, givenTs, uint32(time.Now().Unix()), false)
+
+	poolLog.Tracef("Stratum prepated work data %v, target %032x",
+		hex.EncodeToString(w.Data[:]), w.Target.Bytes())
+	s.PoolWork.Work = w
+
 	return nil
-
 }
 
 // PrepSubmit formats a mining.sumbit message from the solved work.
 func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
+	poolLog.Debugf("Stratum got valid work to submit %x", data)
+	poolLog.Debugf("Stratum got valid work hash %v",
+		chainhash.HashFuncH(data[0:180]))
+	data2 := make([]byte, 180)
+	copy(data2, data[0:180])
+
 	sub := Submit{}
 	sub.Method = "mining.submit"
 
 	// Format data to send off.
-
 	hexData := hex.EncodeToString(data)
 	decodedData, err := hex.DecodeString(hexData)
 	if err != nil {
-		poolLog.Error("Error decoding data.")
+		poolLog.Error("Error decoding data")
 		return sub, err
 	}
 
@@ -888,58 +864,54 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	bhBuf := bytes.NewReader(decodedData[0:wire.MaxBlockHeaderPayload])
 	err = submittedHeader.Deserialize(bhBuf)
 	if err != nil {
-		poolLog.Error("Error generating header.")
+		poolLog.Error("Error generating header")
 		return sub, err
 	}
-
-	//en2 := strconv.FormatUint(s.PoolWork.ExtraNonce2, 16)
-	nonce := strconv.FormatUint(uint64(submittedHeader.Nonce), 16)
-	time := encodeTime(submittedHeader.Timestamp)
-
-	en1, err := hex.DecodeString(s.PoolWork.ExtraNonce1)
-	if err != nil {
-		poolLog.Error("Error decoding ExtraNonce1.")
-		//return err
-	}
-	poolLog.Tracef("en1 %v s.PoolWork.ExtraNonce1 %v", en1, s.PoolWork.ExtraNonce1)
-	// Work out padding
-	tmp := []string{"%0", strconv.Itoa(int(s.PoolWork.ExtraNonce2Length) * 2), "x"}
-	fmtString := strings.Join(tmp, "")
-	en2, err := hex.DecodeString(fmt.Sprintf(fmtString, s.PoolWork.ExtraNonce2))
-	if err != nil {
-		poolLog.Error("Error decoding ExtraNonce2.")
-		//return err
-	}
-	poolLog.Errorf("en2 %v s.PoolWork.ExtraNonce2 %v", en2, s.PoolWork.ExtraNonce2)
-	extraNonce := append(en1[:], en2[:]...)
-	poolLog.Errorf("extraNonce %v", extraNonce)
 
 	s.ID++
 	sub.ID = s.ID
 	s.submitID = s.ID
 	s.submitted = true
 
-	poolLog.Tracef("ntime %v", s.PoolWork.Ntime)
+	latestWorkTs := atomic.LoadUint32(&s.latestJobTime)
+	if uint32(submittedHeader.Timestamp.Unix()) != latestWorkTs {
+		return sub, ErrStatumStaleWork
+	}
 
-	poolLog.Tracef("raw User %v JobId %v xnonce2 %v xnonce2length %v time %v nonce %v", s.User, s.PoolWork.JobID, s.PoolWork.ExtraNonce2, s.PoolWork.ExtraNonce2Length, submittedHeader.Timestamp, submittedHeader.Nonce)
+	// The timestamp string should be:
+	//
+	//   timestampStr := fmt.Sprintf("%08x",
+	//     uint32(submittedHeader.Timestamp.Unix()))
+	//
+	// but the "stratum" protocol appears to only use this value
+	// to check if the miner is in sync with the latest announcement
+	// of work from the pool. If this value is anything other than
+	// the timestamp of the latest pool work timestamp, work gets
+	// rejected from the current implementation.
+	timestampStr := fmt.Sprintf("%08x", latestWorkTs)
+	nonceStr := fmt.Sprintf("%08x", submittedHeader.Nonce)
+	xnonceStr := hex.EncodeToString(data[144:156])
 
-	xnonce2str := hex.EncodeToString(data[144:156])
-
-	poolLog.Tracef("encoded User %v JobId %v xnonce2 %v time %v nonce %v", s.User, s.PoolWork.JobID, xnonce2str, string(time), nonce)
-
-	sub.Params = []string{s.User, s.PoolWork.JobID, xnonce2str, s.PoolWork.Ntime, nonce}
 	// pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, nvotestr
+	sub.Params = []string{s.User, s.PoolWork.JobID, xnonceStr, timestampStr,
+		nonceStr}
 
 	return sub, nil
 }
 
 // Various helper functions for formatting are below.
 
-func encodeTime(t time.Time) []byte {
-	buf := make([]byte, 8)
-	u := uint64(t.Unix())
-	binary.BigEndian.PutUint64(buf, u)
-	return buf
+// uint32SwapSlice swaps the endianess of a slice of uint32s, swapping only
+// uint32s at a time. The number of bytes in the pointer passed must be a
+// multiple of 4. The underlying slice is modified.
+func uint32SwapSlice(aPtr *[]byte) {
+	a := *aPtr
+	sz := len(a)
+	itrs := sz / 4
+	for i := 0; i < itrs; i++ {
+		a[(i*4)], a[(i*4)+3] = a[(i*4)+3], a[i*4]
+		a[(i*4)+1], a[(i*4)+2] = a[(i*4)+2], a[(i*4)+1]
+	}
 }
 
 func reverseS(s string) (string, error) {
@@ -986,7 +958,9 @@ func revHash(hash string) string {
 	revHash := ""
 	for i := 0; i < 7; i++ {
 		j := i * 8
-		part := fmt.Sprintf("%c%c%c%c%c%c%c%c", hash[6+j], hash[7+j], hash[4+j], hash[5+j], hash[2+j], hash[3+j], hash[0+j], hash[1+j])
+		part := fmt.Sprintf("%c%c%c%c%c%c%c%c",
+			hash[6+j], hash[7+j], hash[4+j], hash[5+j],
+			hash[2+j], hash[3+j], hash[0+j], hash[1+j])
 		revHash += part
 	}
 	return revHash

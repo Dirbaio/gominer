@@ -8,7 +8,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/btcsuite/go-flags"
@@ -30,10 +32,13 @@ var (
 	defaultRPCServer   = "localhost"
 	defaultRPCCertFile = filepath.Join(dcrdHomeDir, "rpc.cert")
 	defaultLogDir      = filepath.Join(minerHomeDir, defaultLogDirname)
-	defaultIntensity   = 26
+	defaultIntensity   = []string{}
+	defaultWorkSize    = []string{}
+
 	// Took these values from cgminer.
 	minIntensity = 8
 	maxIntensity = 31
+	maxWorkSize  = 0xFFFFFFFF
 )
 
 type config struct {
@@ -66,10 +71,13 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
-	Intensity int `short:"i" long:"intensity" description:"Intensity."`
+	Intensity     []string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device, use multiple flags for multiple devices"`
+	IntensityInts []int
+	WorkSize      []string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity), use multiple flags for multiple devices"`
+	WorkSizeInts  []int
 
 	// Pool related options
-	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port) "`
+	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port)"`
 	PoolUser     string `short:"m" long:"pooluser" description:"Pool username"`
 	PoolPassword string `short:"n" long:"poolpass" default-mask:"-" description:"Pool password"`
 }
@@ -224,6 +232,7 @@ func loadConfig() (*config, []string, error) {
 		RPCCert:    defaultRPCCertFile,
 		Intensity:  defaultIntensity,
 		ClKernel:   defaultClKernel,
+		WorkSize:   defaultWorkSize,
 	}
 
 	// Create the home directory if it doesn't already exist.
@@ -293,11 +302,70 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	if (cfg.Intensity < minIntensity) || (cfg.Intensity > maxIntensity) {
-		err := fmt.Errorf("Intensity %v not without range %v to %v.",
-			cfg.Intensity, minIntensity, maxIntensity)
+	// The intensity or worksize must be set by the user.
+	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
+		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+		err := fmt.Errorf("Intensity or work size must be set")
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
+	}
+
+	// Check the intensities if the user is setting that.
+	cfg.IntensityInts = make([]int, len(cfg.Intensity))
+	if !reflect.DeepEqual(cfg.Intensity, defaultIntensity) {
+		for i := range cfg.Intensity {
+			var err error
+			cfg.IntensityInts[i], err = strconv.Atoi(cfg.Intensity[i])
+			if err != nil {
+				err := fmt.Errorf("Could not convert intensity number %v "+
+					"(%v) to int: %s", i, cfg.Intensity[i], err.Error())
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+
+			if (cfg.IntensityInts[i] < minIntensity) ||
+				(cfg.IntensityInts[i] > maxIntensity) {
+				err := fmt.Errorf("Intensity %v (device %v) not within "+
+					"range %v to %v.", cfg.IntensityInts[i], i, minIntensity,
+					maxIntensity)
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+		}
+	}
+
+	// Check the work size.
+	cfg.WorkSizeInts = make([]int, len(cfg.WorkSize))
+	if !reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+		for i := range cfg.WorkSize {
+			var err error
+			cfg.WorkSizeInts[i], err = strconv.Atoi(cfg.WorkSize[i])
+			if err != nil {
+				err := fmt.Errorf("Could not convert work size number %v "+
+					"(%v) to int: %s", i, cfg.Intensity[i], err.Error())
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+
+			if cfg.WorkSizeInts[i] < 0 {
+				err := fmt.Errorf("Zero or negative WorkSize passed: %v",
+					cfg.WorkSizeInts[i])
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+			if cfg.WorkSizeInts[i] > maxWorkSize {
+				err := fmt.Errorf("Too big WorkSize passed: %v, max %v",
+					cfg.WorkSizeInts[i], maxWorkSize)
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+			if cfg.WorkSizeInts[i]%256 != 0 {
+				err := fmt.Errorf("Work size %v not a multiple of 256",
+					cfg.WorkSizeInts[i])
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+		}
 	}
 
 	// Special show command to list supported subsystems and exit.
