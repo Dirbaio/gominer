@@ -1,3 +1,5 @@
+// Copyright (c) 2016 The Decred developers.
+
 package main
 
 import (
@@ -91,6 +93,8 @@ type Device struct {
 	outputBuffer cl.CL_mem
 	program      cl.CL_program
 	kernel       cl.CL_kernel
+
+	workSize uint32
 
 	// extraNonce is the device extraNonce, where the first
 	// byte is the device ID (supporting up to 255 devices)
@@ -224,6 +228,39 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 
 	d.started = uint32(time.Now().Unix())
 
+	// Autocalibrate the desired work size for the kernel, or use one of the
+	// values passed explicitly by the use.
+	// The intensity or worksize must be set by the user.
+	userSetWorkSize := true
+	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
+		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+		userSetWorkSize = false
+	}
+
+	var globalWorkSize uint32
+	if !userSetWorkSize {
+		idealWorkSize, err := d.calcWorkSizeForMilliseconds(cfg.Autocalibrate)
+		if err != nil {
+			return nil, err
+		}
+
+		minrLog.Debugf("Autocalibration successful, work size for %v"+
+			"ms per kernel execution on device %v determined to be %v",
+			cfg.Autocalibrate, d.index, idealWorkSize)
+
+		globalWorkSize = idealWorkSize
+	} else {
+		if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
+			globalWorkSize = 1 << uint32(cfg.IntensityInts[d.index])
+		} else {
+			globalWorkSize = uint32(cfg.WorkSizeInts[d.index])
+		}
+	}
+	intensity := math.Log2(float64(globalWorkSize))
+	minrLog.Infof("GPU #%d: Work size set to %v ('intensity' %v)",
+		d.index, globalWorkSize, intensity)
+	d.workSize = globalWorkSize
+
 	return d, nil
 }
 
@@ -328,17 +365,6 @@ func (d *Device) testFoundCandidate() {
 func (d *Device) runDevice() error {
 	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
-	var globalWorksize uint32
-	if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-		globalWorksize = 1 << uint32(cfg.IntensityInts[d.index])
-		minrLog.Debugf("GPU #%d: Intensity %v (work size: %v)", d.index,
-			cfg.IntensityInts[d.index], globalWorksize)
-	} else {
-		globalWorksize = uint32(cfg.WorkSizeInts[d.index])
-		intensity := math.Log2(float64(cfg.WorkSizeInts[d.index]))
-		minrLog.Debugf("GPU #%d: Work size: %v ('intensity' %v)", d.index,
-			cfg.WorkSizeInts[d.index], intensity)
-	}
 
 	// Bump the extraNonce for the device it's running on
 	// when you begin mining. This ensures each GPU is doing
@@ -415,7 +441,7 @@ func (d *Device) runDevice() error {
 		// Execute the kernel and follow its execution time.
 		currentTime := time.Now()
 		var globalWorkSize [1]cl.CL_size_t
-		globalWorkSize[0] = cl.CL_size_t(globalWorksize)
+		globalWorkSize[0] = cl.CL_size_t(d.workSize)
 		var localWorkSize [1]cl.CL_size_t
 		localWorkSize[0] = localWorksize
 		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil,

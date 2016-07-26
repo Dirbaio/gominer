@@ -26,14 +26,15 @@ const (
 )
 
 var (
-	minerHomeDir       = dcrutil.AppDataDir("gominer", false)
-	dcrdHomeDir        = dcrutil.AppDataDir("dcrd", false)
-	defaultConfigFile  = filepath.Join(minerHomeDir, defaultConfigFilename)
-	defaultRPCServer   = "localhost"
-	defaultRPCCertFile = filepath.Join(dcrdHomeDir, "rpc.cert")
-	defaultLogDir      = filepath.Join(minerHomeDir, defaultLogDirname)
-	defaultIntensity   = []string{}
-	defaultWorkSize    = []string{}
+	minerHomeDir         = dcrutil.AppDataDir("gominer", false)
+	dcrdHomeDir          = dcrutil.AppDataDir("dcrd", false)
+	defaultConfigFile    = filepath.Join(minerHomeDir, defaultConfigFilename)
+	defaultRPCServer     = "localhost"
+	defaultRPCCertFile   = filepath.Join(dcrdHomeDir, "rpc.cert")
+	defaultLogDir        = filepath.Join(minerHomeDir, defaultLogDirname)
+	defaultAutocalibrate = 500
+	defaultIntensity     = []string{}
+	defaultWorkSize      = []string{}
 
 	// Took these values from cgminer.
 	minIntensity = 8
@@ -71,6 +72,7 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
+	Autocalibrate int      `short:"A" long:"autocalibrate" description:"Use GPU autocalibration to achieve a kernel execution timing of the passed number of milliseconds"`
 	Intensity     []string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device, use multiple flags for multiple devices"`
 	IntensityInts []int
 	WorkSize      []string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity), use multiple flags for multiple devices"`
@@ -225,14 +227,15 @@ func cleanAndExpandPath(path string) string {
 func loadConfig() (*config, []string, error) {
 	// Default config.
 	cfg := config{
-		ConfigFile: defaultConfigFile,
-		DebugLevel: defaultLogLevel,
-		LogDir:     defaultLogDir,
-		RPCServer:  defaultRPCServer,
-		RPCCert:    defaultRPCCertFile,
-		Intensity:  defaultIntensity,
-		ClKernel:   defaultClKernel,
-		WorkSize:   defaultWorkSize,
+		ConfigFile:    defaultConfigFile,
+		DebugLevel:    defaultLogLevel,
+		LogDir:        defaultLogDir,
+		RPCServer:     defaultRPCServer,
+		RPCCert:       defaultRPCCertFile,
+		Autocalibrate: defaultAutocalibrate,
+		Intensity:     defaultIntensity,
+		ClKernel:      defaultClKernel,
+		WorkSize:      defaultWorkSize,
 	}
 
 	// Create the home directory if it doesn't already exist.
@@ -298,14 +301,6 @@ func loadConfig() (*config, []string, error) {
 		str := "%s: The testnet and simnet params can't be used " +
 			"together -- choose one of the two"
 		err := fmt.Errorf(str, "loadConfig")
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	// The intensity or worksize must be set by the user.
-	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
-		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-		err := fmt.Errorf("Intensity or work size must be set")
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
 	}
