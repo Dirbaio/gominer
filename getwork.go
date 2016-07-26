@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -178,13 +179,19 @@ func GetWork() (*Work, error) {
 		return nil, fmt.Errorf("Wrong target length: got %d, expected 32",
 			len(target))
 	}
-	bigTarget := new(big.Int)
-	bigTarget.SetString(hex.EncodeToString(target), 16)
 
-	var w Work
-	copy(w.Data[:], data)
+	bigTarget := new(big.Int)
+	bigTarget.SetBytes(reverse(target))
+
+	var workData [192]byte
+	copy(workData[:], data)
+	givenTs := binary.LittleEndian.Uint32(
+		workData[128+4*timestampWord : 132+4*timestampWord])
+	w := NewWork(workData, bigTarget, givenTs, uint32(time.Now().Unix()), true)
+
 	w.Target = bigTarget
-	return &w, nil
+
+	return w, nil
 }
 
 // GetPoolWork gets work from a stratum enabled pool

@@ -63,13 +63,13 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 
 // NewWork is the constructor for work.
 func NewWork(data [192]byte, target *big.Int, jobTime uint32, timeReceived uint32,
-	isSolo bool) *Work {
+	isGetWork bool) *Work {
 	return &Work{
 		Data:         data,
 		Target:       target,
 		JobTime:      jobTime,
 		TimeReceived: timeReceived,
-		isSolo:       isSolo,
+		isGetWork:    isGetWork,
 	}
 }
 
@@ -78,7 +78,7 @@ type Work struct {
 	Target       *big.Int
 	JobTime      uint32
 	TimeReceived uint32
-	isSolo       bool
+	isGetWork    bool
 }
 
 type Device struct {
@@ -364,7 +364,7 @@ func (d *Device) runDevice() error {
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
 		ts := d.work.JobTime
-		if d.work.isSolo {
+		if d.work.isGetWork {
 			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
 			ts = d.work.JobTime + diffSeconds
 		}
@@ -456,6 +456,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	// Construct the final block header.
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
+
 	binary.BigEndian.PutUint32(data[128+4*timestampWord:], ts)
 	binary.BigEndian.PutUint32(data[128+4*nonce0Word:], nonce0)
 	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)

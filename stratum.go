@@ -988,5 +988,4 @@ func revHash(hash string) string {
 		revHash += part
 	}
 	return revHash
-
 }
