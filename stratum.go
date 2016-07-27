@@ -273,7 +273,7 @@ func (s *Stratum) Listen() {
 			}
 			if aResp.ID == s.submitID {
 				if aResp.Result {
-					poolLog.Info("Share Accepted")
+					poolLog.Debugf("Share accepted")
 				} else {
 					poolLog.Error("Share rejected: ", aResp.Error.ErrStr)
 				}

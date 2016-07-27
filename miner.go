@@ -155,11 +155,15 @@ func (m *Miner) workSubmitThread() {
 			} else {
 				accepted, err := GetPoolWorkSubmit(data, m.pool)
 				if err != nil {
-					if err == ErrStatumStaleWork {
+					switch err {
+					case ErrStatumStaleWork:
 						stale := atomic.LoadUint64(&m.staleShares)
 						stale++
 						atomic.StoreUint64(&m.staleShares, stale)
-					} else {
+
+						minrLog.Debugf("Share submitted to pool was stale")
+
+					default:
 						inval := atomic.LoadUint64(&m.invalidShares)
 						inval++
 						atomic.StoreUint64(&m.invalidShares, inval)
