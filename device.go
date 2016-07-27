@@ -522,7 +522,7 @@ func (d *Device) SetWork(w *Work) {
 
 func formatHashrate(h float64) string {
 	if h > 1000000000 {
-		return fmt.Sprintf("%.1fGH/s", h/1000000000)
+		return fmt.Sprintf("%.3fGH/s", h/1000000000)
 	} else if h > 1000000 {
 		return fmt.Sprintf("%.0fMH/s", h/1000000)
 	} else if h > 1000 {
