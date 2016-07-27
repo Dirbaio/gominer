@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net"
 	"os"
@@ -175,7 +176,10 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 
 	// Target for share is 1 unless we hear otherwise.
 	stratum.Diff = 1
-	stratum.Target = diffToTarget(stratum.Diff)
+	stratum.Target, err = diffToTarget(stratum.Diff)
+	if err != nil {
+		return nil, err
+	}
 	stratum.PoolWork.NewWork = false
 	stratum.Reader = bufio.NewReader(stratum.Conn)
 	go stratum.Listen()
@@ -667,7 +671,10 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if !ok {
 			return nil, errJsonType
 		}
-		s.Target = diffToTarget(difficulty)
+		s.Target, err = diffToTarget(difficulty)
+		if err != nil {
+			return nil, err
+		}
 		s.Diff = difficulty
 		var nres = StratumMsg{}
 		nres.Method = method
@@ -961,13 +968,23 @@ func reverseToInt(s string) (int32, error) {
 }
 
 // diffToTarget converts a whole number difficulty into a target.
-func diffToTarget(diff float64) *big.Int {
+func diffToTarget(diff float64) (*big.Int, error) {
+	if diff <= 0 {
+		return nil, fmt.Errorf("invalid pool difficulty %v (0 or less than "+
+			"zero passed)", diff)
+	}
+
+	if math.Floor(diff) < diff {
+		return nil, fmt.Errorf("invalid pool difficulty %v (not a whole "+
+			"number)", diff)
+	}
+
 	divisor := new(big.Int).SetInt64(int64(diff))
 	max := chainParams.PowLimit
 	target := new(big.Int)
 	target.Div(max, divisor)
 
-	return target
+	return target, nil
 }
 
 func reverse(src []byte) []byte {
