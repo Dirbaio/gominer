@@ -863,6 +863,19 @@ func (s *Stratum) PrepWork() error {
 		workData[128+4*timestampWord : 132+4*timestampWord])
 	atomic.StoreUint32(&s.latestJobTime, givenTs)
 
+	if s.Target == nil {
+		poolLog.Errorf("No target set!  Reconnecting to pool.")
+		err = s.Reconnect()
+		if err != nil {
+			poolLog.Error(err)
+			// XXX should just die at this point
+			// but we don't really have access to
+			// the channel to end everything.
+			return err
+		}
+		return nil
+	}
+
 	w := NewWork(workData, s.Target, givenTs, uint32(time.Now().Unix()), false)
 
 	poolLog.Tracef("Stratum prepated work data %v, target %032x",
