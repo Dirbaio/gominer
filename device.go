@@ -16,22 +16,21 @@ import (
 	"unsafe"
 
 	"github.com/decred/dcrd/blockchain"
+	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 
 	"github.com/decred/gominer/blake256"
 	"github.com/decred/gominer/cl"
+	"github.com/decred/gominer/work"
 )
 
 const (
 	outputBufferSize = cl.CL_size_t(64)
 	localWorksize    = 64
 	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
-
-	timestampWord = 2
-	nonce0Word    = 3
-	nonce1Word    = 4
-	nonce2Word    = 5
 )
+
+var chainParams = &chaincfg.MainNetParams
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
 
@@ -63,26 +62,6 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	return program_buffer[:], program_size[:], nil
 }
 
-// NewWork is the constructor for work.
-func NewWork(data [192]byte, target *big.Int, jobTime uint32, timeReceived uint32,
-	isGetWork bool) *Work {
-	return &Work{
-		Data:         data,
-		Target:       target,
-		JobTime:      jobTime,
-		TimeReceived: timeReceived,
-		isGetWork:    isGetWork,
-	}
-}
-
-type Work struct {
-	Data         [192]byte
-	Target       *big.Int
-	JobTime      uint32
-	TimeReceived uint32
-	isGetWork    bool
-}
-
 type Device struct {
 	index        int
 	platformID   cl.CL_platform_id
@@ -107,8 +86,8 @@ type Device struct {
 	midstate  [8]uint32
 	lastBlock [16]uint32
 
-	work     Work
-	newWork  chan *Work
+	work     work.Work
+	newWork  chan *work.Work
 	workDone chan []byte
 	hasWork  bool
 
@@ -153,7 +132,7 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 		deviceID:   deviceID,
 		deviceName: getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"),
 		quit:       make(chan struct{}),
-		newWork:    make(chan *Work, 5),
+		newWork:    make(chan *work.Work, 5),
 		workDone:   workDone,
 	}
 
@@ -273,7 +252,7 @@ func (d *Device) Release() {
 }
 
 func (d *Device) updateCurrentWork() {
-	var w *Work
+	var w *work.Work
 	if d.hasWork {
 		// If we already have work, we just need to check if there's new one
 		// without blocking if there's not.
@@ -299,7 +278,7 @@ func (d *Device) updateCurrentWork() {
 
 	// Bump and set the work ID if the work is new.
 	d.currentWorkID++
-	binary.LittleEndian.PutUint32(d.work.Data[128+4*nonce2Word:],
+	binary.LittleEndian.PutUint32(d.work.Data[128+4*work.Nonce2Word:],
 		d.currentWorkID)
 
 	// Reset the hash state
@@ -371,7 +350,7 @@ func (d *Device) runDevice() error {
 	// different work. If the extraNonce has already been
 	// set for valid work, restore that.
 	d.extraNonce += uint32(d.index) << 24
-	d.lastBlock[nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+	d.lastBlock[work.Nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
 
 	var status cl.CL_int
 	for {
@@ -385,16 +364,16 @@ func (d *Device) runDevice() error {
 
 		// Increment extraNonce.
 		rolloverExtraNonce(&d.extraNonce)
-		d.lastBlock[nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+		d.lastBlock[work.Nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
 
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
 		ts := d.work.JobTime
-		if d.work.isGetWork {
+		if d.work.IsGetWork {
 			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
 			ts = d.work.JobTime + diffSeconds
 		}
-		d.lastBlock[timestampWord] = Uint32EndiannessSwap(ts)
+		d.lastBlock[work.TimestampWord] = Uint32EndiannessSwap(ts)
 
 		// arg 0: pointer to the buffer
 		obuf := d.outputBuffer
@@ -418,7 +397,7 @@ func (d *Device) runDevice() error {
 		// args 9..20: lastBlock except nonce
 		i2 := 0
 		for i := 0; i < 12; i++ {
-			if i2 == nonce0Word {
+			if i2 == work.Nonce0Word {
 				i2++
 			}
 			lb := d.lastBlock[i2]
@@ -461,15 +440,15 @@ func (d *Device) runDevice() error {
 		for i := uint32(0); i < outputData[0]; i++ {
 			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
 				"extraNonce %08x, workID %08x, timestamp %08x",
-				d.index, i+1, outputData[i+1], d.lastBlock[nonce1Word],
+				d.index, i+1, outputData[i+1], d.lastBlock[work.Nonce1Word],
 				Uint32EndiannessSwap(d.currentWorkID),
-				d.lastBlock[timestampWord])
+				d.lastBlock[work.TimestampWord])
 
 			// Assess the work. If it's below target, it'll be rejected
 			// here. The mining algorithm currently sends this function any
 			// difficulty 1 shares.
-			d.foundCandidate(d.lastBlock[timestampWord], outputData[i+1],
-				d.lastBlock[nonce1Word])
+			d.foundCandidate(d.lastBlock[work.TimestampWord], outputData[i+1],
+				d.lastBlock[work.Nonce1Word])
 		}
 
 		elapsedTime := time.Since(currentTime)
@@ -483,9 +462,9 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
 
-	binary.BigEndian.PutUint32(data[128+4*timestampWord:], ts)
-	binary.BigEndian.PutUint32(data[128+4*nonce0Word:], nonce0)
-	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)
+	binary.BigEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
+	binary.BigEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
+	binary.BigEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
 	hash := chainhash.HashFuncH(data[0:180])
 
 	// Hashes that reach this logic and fail the minimal proof of
@@ -516,7 +495,7 @@ func (d *Device) Stop() {
 	close(d.quit)
 }
 
-func (d *Device) SetWork(w *Work) {
+func (d *Device) SetWork(w *work.Work) {
 	d.newWork <- w
 }
 

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/decred/gominer/cl"
+	"github.com/decred/gominer/stratum"
+	"github.com/decred/gominer/work"
 )
 
 func getCLPlatforms() ([]cl.CL_platform_id, error) {
@@ -49,7 +51,7 @@ type Miner struct {
 	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
-	pool             *Stratum
+	pool             *stratum.Stratum
 
 	started       uint32
 	validShares   uint64
@@ -66,7 +68,7 @@ func NewMiner() (*Miner, error) {
 
 	// If needed, start pool code.
 	if cfg.Pool != "" && !cfg.Benchmark {
-		s, err := StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword)
+		s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword, cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version())
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +158,7 @@ func (m *Miner) workSubmitThread() {
 				accepted, err := GetPoolWorkSubmit(data, m.pool)
 				if err != nil {
 					switch err {
-					case ErrStatumStaleWork:
+					case stratum.ErrStatumStaleWork:
 						stale := atomic.LoadUint64(&m.staleShares)
 						stale++
 						atomic.StoreUint64(&m.staleShares, stale)
@@ -278,7 +280,7 @@ func (m *Miner) Run() {
 
 	if cfg.Benchmark {
 		minrLog.Warn("Running in BENCHMARK mode! No real mining taking place!")
-		work := &Work{}
+		work := &work.Work{}
 		for _, d := range m.devices {
 			d.SetWork(work)
 		}

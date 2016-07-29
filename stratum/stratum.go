@@ -1,6 +1,6 @@
 // Copyright (c) 2016 The Decred developers.
 
-package main
+package stratum
 
 import (
 	"bufio"
@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net"
 	"os"
@@ -28,6 +27,9 @@ import (
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
+
+	"github.com/decred/gominer/util"
+	"github.com/decred/gominer/work"
 )
 
 var chainParams = &chaincfg.MainNetParams
@@ -38,9 +40,7 @@ var ErrStatumStaleWork = fmt.Errorf("Stale work, throwing away")
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
 type Stratum struct {
-	Pool          string
-	User          string
-	Pass          string
+	cfg           Config
 	Conn          net.Conn
 	Reader        *bufio.Reader
 	ID            uint64
@@ -49,9 +49,20 @@ type Stratum struct {
 	submitID      uint64
 	Diff          float64
 	Target        *big.Int
-	submitted     bool
+	Submitted     bool
 	PoolWork      NotifyWork
 	latestJobTime uint32
+}
+
+// Config holdes the config options that may be used by a stratum pool.
+type Config struct {
+	Pool      string
+	User      string
+	Pass      string
+	Proxy     string
+	ProxyUser string
+	ProxyPass string
+	Version   string
 }
 
 // NotifyWork holds all the info recieved from a mining.notify message along
@@ -72,7 +83,7 @@ type NotifyWork struct {
 	Ntime             string
 	Version           string
 	NewWork           bool
-	Work              *Work
+	Work              *work.Work
 }
 
 // StratumMsg is the basic message object from stratum.
@@ -138,8 +149,16 @@ var errJsonType = errors.New("Unexpected type in json.")
 
 // StratumConn starts the initial connection to a stratum pool and sets defaults
 // in the pool object.
-func StratumConn(pool, user, pass string) (*Stratum, error) {
-	poolLog.Infof("Using pool: %v", pool)
+func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string) (*Stratum, error) {
+	var stratum Stratum
+	stratum.cfg.User = user
+	stratum.cfg.Pass = pass
+	stratum.cfg.Proxy = proxy
+	stratum.cfg.ProxyUser = proxyUser
+	stratum.cfg.ProxyPass = proxyPass
+	stratum.cfg.Version = version
+
+	log.Infof("Using pool: %v", pool)
 	proto := "stratum+tcp://"
 	if strings.HasPrefix(pool, proto) {
 		pool = strings.Replace(pool, proto, "", 1)
@@ -149,11 +168,11 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 	}
 	var conn net.Conn
 	var err error
-	if cfg.Proxy != "" {
+	if stratum.cfg.Proxy != "" {
 		proxy := &socks.Proxy{
-			Addr:     cfg.Proxy,
-			Username: cfg.ProxyUser,
-			Password: cfg.ProxyPass,
+			Addr:     stratum.cfg.Proxy,
+			Username: stratum.cfg.ProxyUser,
+			Password: stratum.cfg.ProxyPass,
 		}
 		conn, err = proxy.Dial("tcp", pool)
 	} else {
@@ -162,12 +181,9 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 	if err != nil {
 		return nil, err
 	}
-	var stratum Stratum
 	stratum.ID = 1
 	stratum.Conn = conn
-	stratum.Pool = pool
-	stratum.User = user
-	stratum.Pass = pass
+	stratum.cfg.Pool = pool
 
 	// We will set it for sure later but this really should be the value and
 	// setting it here will prevent so incorrect matches based on the
@@ -176,7 +192,7 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 
 	// Target for share is 1 unless we hear otherwise.
 	stratum.Diff = 1
-	stratum.Target, err = diffToTarget(stratum.Diff)
+	stratum.Target, err = util.DiffToTarget(stratum.Diff, chainParams.PowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -202,15 +218,15 @@ func StratumConn(pool, user, pass string) (*Stratum, error) {
 func (s *Stratum) Reconnect() error {
 	var conn net.Conn
 	var err error
-	if cfg.Proxy != "" {
+	if s.cfg.Proxy != "" {
 		proxy := &socks.Proxy{
-			Addr:     cfg.Proxy,
-			Username: cfg.ProxyUser,
-			Password: cfg.ProxyPass,
+			Addr:     s.cfg.Proxy,
+			Username: s.cfg.ProxyUser,
+			Password: s.cfg.ProxyPass,
 		}
-		conn, err = proxy.Dial("tcp", s.Pool)
+		conn, err = proxy.Dial("tcp", s.cfg.Pool)
 	} else {
-		conn, err = net.Dial("tcp", s.Pool)
+		conn, err = net.Dial("tcp", s.cfg.Pool)
 	}
 	if err != nil {
 		return err
@@ -233,31 +249,31 @@ func (s *Stratum) Reconnect() error {
 
 // Listen is the listener for the incoming messages from the stratum pool.
 func (s *Stratum) Listen() {
-	poolLog.Debug("Starting Listener")
+	log.Debug("Starting Listener")
 
 	for {
 		result, err := s.Reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				poolLog.Error("Connection lost!  Reconnecting.")
+				log.Error("Connection lost!  Reconnecting.")
 				err = s.Reconnect()
 				if err != nil {
-					poolLog.Error(err)
-					poolLog.Error("Reconnect failed.")
+					log.Error(err)
+					log.Error("Reconnect failed.")
 					os.Exit(1)
 					return
 				}
 
 			} else {
-				poolLog.Error(err)
+				log.Error(err)
 			}
 			continue
 		}
 
-		poolLog.Debug(strings.TrimSuffix(result, "\n"))
+		log.Debug(strings.TrimSuffix(result, "\n"))
 		resp, err := s.Unmarshal([]byte(result))
 		if err != nil {
-			poolLog.Error(err)
+			log.Error(err)
 			continue
 		}
 
@@ -266,41 +282,41 @@ func (s *Stratum) Listen() {
 			aResp := resp.(*BasicReply)
 			if int(aResp.ID.(uint64)) == int(s.authID) {
 				if aResp.Result {
-					poolLog.Info("Logged in")
+					log.Info("Logged in")
 				} else {
-					poolLog.Error("Auth failure.")
+					log.Error("Auth failure.")
 				}
 			}
 			if aResp.ID == s.submitID {
 				if aResp.Result {
-					poolLog.Debugf("Share accepted")
+					log.Debugf("Share accepted")
 				} else {
-					poolLog.Error("Share rejected: ", aResp.Error.ErrStr)
+					log.Error("Share rejected: ", aResp.Error.ErrStr)
 				}
-				s.submitted = false
+				s.Submitted = false
 			}
 
 		case StratumMsg:
 			nResp := resp.(StratumMsg)
-			poolLog.Trace(nResp)
+			log.Trace(nResp)
 			// Too much is still handled in unmarshaler.  Need to
 			// move stuff other than unmarshalling here.
 			switch nResp.Method {
 			case "client.show_message":
-				poolLog.Info(nResp.Params)
+				log.Info(nResp.Params)
 			case "client.reconnect":
-				poolLog.Info("Reconnect requested")
+				log.Info("Reconnect requested")
 				wait, err := strconv.Atoi(nResp.Params[2])
 				if err != nil {
-					poolLog.Error(err)
+					log.Error(err)
 					continue
 				}
 				time.Sleep(time.Duration(wait) * time.Second)
 				pool := nResp.Params[0] + ":" + nResp.Params[1]
-				s.Pool = pool
+				s.cfg.Pool = pool
 				err = s.Reconnect()
 				if err != nil {
-					poolLog.Error(err)
+					log.Error(err)
 					// XXX should just die at this point
 					// but we don't really have access to
 					// the channel to end everything.
@@ -308,25 +324,25 @@ func (s *Stratum) Listen() {
 				}
 
 			case "client.get_version":
-				poolLog.Debug("get_version request received.")
+				log.Debug("get_version request received.")
 				msg := StratumMsg{
 					Method: nResp.Method,
 					ID:     nResp.ID,
-					Params: []string{"decred-gominer/" + version()},
+					Params: []string{"decred-gominer/" + s.cfg.Version},
 				}
 				m, err := json.Marshal(msg)
 				if err != nil {
-					poolLog.Error(err)
+					log.Error(err)
 					continue
 				}
 				_, err = s.Conn.Write(m)
 				if err != nil {
-					poolLog.Error(err)
+					log.Error(err)
 					continue
 				}
 				_, err = s.Conn.Write([]byte("\n"))
 				if err != nil {
-					poolLog.Error(err)
+					log.Error(err)
 					continue
 				}
 			}
@@ -338,7 +354,7 @@ func (s *Stratum) Listen() {
 			heightHex := nResp.GenTX1[186:188] + nResp.GenTX1[184:186]
 			height, err := strconv.ParseInt(heightHex, 16, 32)
 			if err != nil {
-				poolLog.Tracef("failed to parse height %v", err)
+				log.Tracef("failed to parse height %v", err)
 				height = 0
 			}
 
@@ -349,24 +365,24 @@ func (s *Stratum) Listen() {
 			s.PoolWork.Version = nResp.BlockVersion
 			parsedNtime, err := strconv.ParseInt(nResp.Ntime, 16, 64)
 			if err != nil {
-				poolLog.Error(err)
+				log.Error(err)
 			}
 
 			s.PoolWork.Ntime = nResp.Ntime
 			s.PoolWork.NtimeDelta = parsedNtime - time.Now().Unix()
 			s.PoolWork.Clean = nResp.CleanJobs
 			s.PoolWork.NewWork = true
-			poolLog.Trace("notify: ", spew.Sdump(nResp))
+			log.Trace("notify: ", spew.Sdump(nResp))
 
 		case *SubscribeReply:
 			nResp := resp.(*SubscribeReply)
 			s.PoolWork.ExtraNonce1 = nResp.ExtraNonce1
 			s.PoolWork.ExtraNonce2Length = nResp.ExtraNonce2Length
-			poolLog.Info("Subscribe reply received.")
-			poolLog.Trace(spew.Sdump(resp))
+			log.Info("Subscribe reply received.")
+			log.Trace(spew.Sdump(resp))
 
 		default:
-			poolLog.Info("Unhandled message: ", result)
+			log.Info("Unhandled message: ", result)
 		}
 	}
 }
@@ -376,7 +392,7 @@ func (s *Stratum) Auth() error {
 	msg := StratumMsg{
 		Method: "mining.authorize",
 		ID:     s.ID,
-		Params: []string{s.User, s.Pass},
+		Params: []string{s.cfg.User, s.cfg.Pass},
 	}
 	// Auth reply has no method so need a way to identify it.
 	// Ugly, but not much choise.
@@ -386,7 +402,7 @@ func (s *Stratum) Auth() error {
 	}
 	s.authID = id
 	s.ID += 1
-	poolLog.Tracef("> %v", msg)
+	log.Tracef("> %v", msg)
 	m, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -407,7 +423,7 @@ func (s *Stratum) Subscribe() error {
 	msg := StratumMsg{
 		Method: "mining.subscribe",
 		ID:     s.ID,
-		Params: []string{"decred-gominer/" + version()},
+		Params: []string{"decred-gominer/" + s.cfg.Version},
 	}
 	s.subID = msg.ID.(uint64)
 	s.ID++
@@ -415,7 +431,7 @@ func (s *Stratum) Subscribe() error {
 	if err != nil {
 		return err
 	}
-	poolLog.Tracef("> %v", string(m))
+	log.Tracef("> %v", string(m))
 	_, err = s.Conn.Write(m)
 	if err != nil {
 		return err
@@ -451,7 +467,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	poolLog.Trace("Received: method: ", method, " id: ", id)
+	log.Trace("Received: method: ", method, " id: ", id)
 	if id == s.authID {
 		var (
 			objmap      map[string]json.RawMessage
@@ -503,7 +519,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		poolLog.Trace(resi)
+		log.Trace(resi)
 		resp := &SubscribeReply{}
 
 		var objmap2 map[string]json.RawMessage
@@ -561,7 +577,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		resp.ExtraNonce2Length = resi[2].(float64)
 		return resp, nil
 	}
-	if id == s.submitID && s.submitted {
+	if id == s.submitID && s.Submitted {
 		var (
 			objmap      map[string]json.RawMessage
 			id          uint64
@@ -607,13 +623,13 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 	}
 	switch method {
 	case "mining.notify":
-		poolLog.Trace("Unmarshal mining.notify")
+		log.Trace("Unmarshal mining.notify")
 		var resi []interface{}
 		err := json.Unmarshal(objmap["params"], &resi)
 		if err != nil {
 			return nil, err
 		}
-		poolLog.Trace(resi)
+		log.Trace(resi)
 		var nres = NotifyRes{}
 		jobID, ok := resi[0].(string)
 		if !ok {
@@ -660,7 +676,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		return nres, nil
 
 	case "mining.set_difficulty":
-		poolLog.Trace("Received new difficulty.")
+		log.Trace("Received new difficulty.")
 		var resi []interface{}
 		err := json.Unmarshal(objmap["params"], &resi)
 		if err != nil {
@@ -671,7 +687,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if !ok {
 			return nil, errJsonType
 		}
-		s.Target, err = diffToTarget(difficulty)
+		s.Target, err = util.DiffToTarget(difficulty, chainParams.PowLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -682,7 +698,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		var params []string
 		params = append(params, diffStr)
 		nres.Params = params
-		poolLog.Infof("Stratum difficulty set to %v", difficulty)
+		log.Infof("Stratum difficulty set to %v", difficulty)
 		return nres, nil
 
 	case "client.show_message":
@@ -728,7 +744,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		poolLog.Trace(resi)
+		log.Trace(resi)
 
 		if len(resi) < 3 {
 			return nil, errJsonType
@@ -768,7 +784,7 @@ func (s *Stratum) PrepWork() error {
 	// ID.
 	en1, err := hex.DecodeString(s.PoolWork.ExtraNonce1)
 	if err != nil {
-		poolLog.Error("Error decoding ExtraNonce1.")
+		log.Error("Error decoding ExtraNonce1.")
 		return err
 	}
 
@@ -777,7 +793,7 @@ func (s *Stratum) PrepWork() error {
 	fmtString := strings.Join(tmp, "")
 	en2, err := hex.DecodeString(fmt.Sprintf(fmtString, s.PoolWork.ExtraNonce2))
 	if err != nil {
-		poolLog.Error("Error decoding ExtraNonce2.")
+		log.Error("Error decoding ExtraNonce2.")
 		return err
 	}
 	extraNonce := append(en1[:], en2[:]...)
@@ -785,7 +801,7 @@ func (s *Stratum) PrepWork() error {
 	// Put coinbase transaction together.
 	cb1, err := hex.DecodeString(s.PoolWork.CB1)
 	if err != nil {
-		poolLog.Error("Error decoding Coinbase pt 1.")
+		log.Error("Error decoding Coinbase pt 1.")
 		return err
 	}
 
@@ -794,11 +810,11 @@ func (s *Stratum) PrepWork() error {
 	// Generate current ntime.
 	ntime := time.Now().Unix() + s.PoolWork.NtimeDelta
 
-	poolLog.Tracef("ntime: %x", ntime)
+	log.Tracef("ntime: %x", ntime)
 
 	// Serialize header.
 	bh := wire.BlockHeader{}
-	v, err := reverseToInt(s.PoolWork.Version)
+	v, err := util.ReverseToInt(s.PoolWork.Version)
 	if err != nil {
 		return err
 	}
@@ -806,7 +822,7 @@ func (s *Stratum) PrepWork() error {
 
 	nbits, err := hex.DecodeString(s.PoolWork.Nbits)
 	if err != nil {
-		poolLog.Error("Error decoding nbits")
+		log.Error("Error decoding nbits")
 		return err
 	}
 
@@ -835,10 +851,10 @@ func (s *Stratum) PrepWork() error {
 	}
 	copy(workdata[workPosition:], version.Bytes())
 
-	prevHash := revHash(s.PoolWork.Hash)
+	prevHash := util.RevHash(s.PoolWork.Hash)
 	p, err := hex.DecodeString(prevHash)
 	if err != nil {
-		poolLog.Error("Error encoding previous hash.")
+		log.Error("Error encoding previous hash.")
 		return err
 	}
 
@@ -852,7 +868,7 @@ func (s *Stratum) PrepWork() error {
 	var randomBytes = make([]byte, 4)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
-		poolLog.Errorf("Unable to generate random bytes")
+		log.Errorf("Unable to generate random bytes")
 		return err
 	}
 	workPosition += 4
@@ -860,14 +876,14 @@ func (s *Stratum) PrepWork() error {
 	var workData [192]byte
 	copy(workData[:], workdata[:])
 	givenTs := binary.LittleEndian.Uint32(
-		workData[128+4*timestampWord : 132+4*timestampWord])
+		workData[128+4*work.TimestampWord : 132+4*work.TimestampWord])
 	atomic.StoreUint32(&s.latestJobTime, givenTs)
 
 	if s.Target == nil {
-		poolLog.Errorf("No target set!  Reconnecting to pool.")
+		log.Errorf("No target set!  Reconnecting to pool.")
 		err = s.Reconnect()
 		if err != nil {
-			poolLog.Error(err)
+			log.Error(err)
 			// XXX should just die at this point
 			// but we don't really have access to
 			// the channel to end everything.
@@ -876,9 +892,9 @@ func (s *Stratum) PrepWork() error {
 		return nil
 	}
 
-	w := NewWork(workData, s.Target, givenTs, uint32(time.Now().Unix()), false)
+	w := work.NewWork(workData, s.Target, givenTs, uint32(time.Now().Unix()), false)
 
-	poolLog.Tracef("Stratum prepated work data %v, target %032x",
+	log.Tracef("Stratum prepated work data %v, target %032x",
 		hex.EncodeToString(w.Data[:]), w.Target.Bytes())
 	s.PoolWork.Work = w
 
@@ -887,8 +903,8 @@ func (s *Stratum) PrepWork() error {
 
 // PrepSubmit formats a mining.sumbit message from the solved work.
 func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
-	poolLog.Debugf("Stratum got valid work to submit %x", data)
-	poolLog.Debugf("Stratum got valid work hash %v",
+	log.Debugf("Stratum got valid work to submit %x", data)
+	log.Debugf("Stratum got valid work hash %v",
 		chainhash.HashFuncH(data[0:180]))
 	data2 := make([]byte, 180)
 	copy(data2, data[0:180])
@@ -900,7 +916,7 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	hexData := hex.EncodeToString(data)
 	decodedData, err := hex.DecodeString(hexData)
 	if err != nil {
-		poolLog.Error("Error decoding data")
+		log.Error("Error decoding data")
 		return sub, err
 	}
 
@@ -908,14 +924,14 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	bhBuf := bytes.NewReader(decodedData[0:wire.MaxBlockHeaderPayload])
 	err = submittedHeader.Deserialize(bhBuf)
 	if err != nil {
-		poolLog.Error("Error generating header")
+		log.Error("Error generating header")
 		return sub, err
 	}
 
 	s.ID++
 	sub.ID = s.ID
 	s.submitID = s.ID
-	s.submitted = true
+	s.Submitted = true
 
 	latestWorkTs := atomic.LoadUint32(&s.latestJobTime)
 	if uint32(submittedHeader.Timestamp.Unix()) != latestWorkTs {
@@ -937,85 +953,8 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	xnonceStr := hex.EncodeToString(data[144:156])
 
 	// pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, nvotestr
-	sub.Params = []string{s.User, s.PoolWork.JobID, xnonceStr, timestampStr,
+	sub.Params = []string{s.cfg.User, s.PoolWork.JobID, xnonceStr, timestampStr,
 		nonceStr}
 
 	return sub, nil
-}
-
-// Various helper functions for formatting are below.
-
-// uint32SwapSlice swaps the endianess of a slice of uint32s, swapping only
-// uint32s at a time. The number of bytes in the pointer passed must be a
-// multiple of 4. The underlying slice is modified.
-func uint32SwapSlice(aPtr *[]byte) {
-	a := *aPtr
-	sz := len(a)
-	itrs := sz / 4
-	for i := 0; i < itrs; i++ {
-		a[(i*4)], a[(i*4)+3] = a[(i*4)+3], a[i*4]
-		a[(i*4)+1], a[(i*4)+2] = a[(i*4)+2], a[(i*4)+1]
-	}
-}
-
-func reverseS(s string) (string, error) {
-	a := strings.Split(s, "")
-	sRev := ""
-	if len(a)%2 != 0 {
-		return "", fmt.Errorf("Incorrect input length")
-	}
-	for i := 0; i < len(a); i += 2 {
-		tmp := []string{a[i], a[i+1], sRev}
-		sRev = strings.Join(tmp, "")
-	}
-	return sRev, nil
-}
-
-func reverseToInt(s string) (int32, error) {
-	sRev, err := reverseS(s)
-	if err != nil {
-		return 0, err
-	}
-	i, err := strconv.ParseInt(sRev, 10, 32)
-	return int32(i), err
-}
-
-// diffToTarget converts a whole number difficulty into a target.
-func diffToTarget(diff float64) (*big.Int, error) {
-	if diff <= 0 {
-		return nil, fmt.Errorf("invalid pool difficulty %v (0 or less than "+
-			"zero passed)", diff)
-	}
-
-	if math.Floor(diff) < diff {
-		return nil, fmt.Errorf("invalid pool difficulty %v (not a whole "+
-			"number)", diff)
-	}
-
-	divisor := new(big.Int).SetInt64(int64(diff))
-	max := chainParams.PowLimit
-	target := new(big.Int)
-	target.Div(max, divisor)
-
-	return target, nil
-}
-
-func reverse(src []byte) []byte {
-	dst := make([]byte, len(src))
-	for i := len(src); i > 0; i-- {
-		dst[len(src)-i] = src[i-1]
-	}
-	return dst
-}
-
-func revHash(hash string) string {
-	revHash := ""
-	for i := 0; i < 7; i++ {
-		j := i * 8
-		part := fmt.Sprintf("%c%c%c%c%c%c%c%c",
-			hash[6+j], hash[7+j], hash[4+j], hash[5+j],
-			hash[2+j], hash[3+j], hash[0+j], hash[1+j])
-		revHash += part
-	}
-	return revHash
 }

@@ -6,6 +6,8 @@ import (
 
 	"github.com/btcsuite/btclog"
 	"github.com/btcsuite/seelog"
+
+	"github.com/decred/gominer/stratum"
 )
 
 var (
@@ -36,6 +38,7 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 		minrLog = logger
 	case "POOL":
 		poolLog = logger
+		stratum.UseLogger(logger)
 	}
 }
 

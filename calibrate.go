@@ -8,12 +8,13 @@ import (
 	"unsafe"
 
 	"github.com/decred/gominer/cl"
+	"github.com/decred/gominer/work"
 )
 
 // getKernelExecutionTime returns the kernel execution time for a device.
 func (d *Device) getKernelExecutionTime(globalWorksize uint32) (time.Duration,
 	error) {
-	d.work = Work{}
+	d.work = work.Work{}
 
 	minrLog.Tracef("Started GPU #%d: %s for kernel execution time fetch",
 		d.index, d.deviceName)
@@ -43,7 +44,7 @@ func (d *Device) getKernelExecutionTime(globalWorksize uint32) (time.Duration,
 	// args 9..20: lastBlock except nonce
 	i2 := 0
 	for i := 0; i < 12; i++ {
-		if i2 == nonce0Word {
+		if i2 == work.Nonce0Word {
 			i2++
 		}
 		lb := d.lastBlock[i2]

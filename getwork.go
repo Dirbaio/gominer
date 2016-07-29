@@ -18,6 +18,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/go-socks/socks"
+
+	"github.com/decred/gominer/stratum"
+	"github.com/decred/gominer/util"
+	"github.com/decred/gominer/work"
 )
 
 // newHTTPClient returns a new HTTP client that is configured according to the
@@ -113,7 +117,7 @@ func createHTTPClient() *http.Client {
 }
 
 // GetWork makes a getwork RPC call and returns the result (data and target)
-func GetWork() (*Work, error) {
+func GetWork() (*work.Work, error) {
 	// Generate a request to the configured RPC server.
 	protocol := "http"
 	if !cfg.NoTLS {
@@ -183,13 +187,13 @@ func GetWork() (*Work, error) {
 	}
 
 	bigTarget := new(big.Int)
-	bigTarget.SetBytes(reverse(target))
+	bigTarget.SetBytes(util.Reverse(target))
 
 	var workData [192]byte
 	copy(workData[:], data)
 	givenTs := binary.LittleEndian.Uint32(
-		workData[128+4*timestampWord : 132+4*timestampWord])
-	w := NewWork(workData, bigTarget, givenTs, uint32(time.Now().Unix()), true)
+		workData[128+4*work.TimestampWord : 132+4*work.TimestampWord])
+	w := work.NewWork(workData, bigTarget, givenTs, uint32(time.Now().Unix()), true)
 
 	w.Target = bigTarget
 
@@ -197,7 +201,7 @@ func GetWork() (*Work, error) {
 }
 
 // GetPoolWork gets work from a stratum enabled pool
-func GetPoolWork(pool *Stratum) (*Work, error) {
+func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 	// Get Next work for stratum and mark it as used
 	if pool.PoolWork.NewWork {
 		poolLog.Info("Received new work from pool.")
@@ -287,7 +291,7 @@ func GetWorkSubmit(data []byte) (bool, error) {
 }
 
 // GetPoolWorkSubmit sends the result to the stratum enabled pool
-func GetPoolWorkSubmit(data []byte, pool *Stratum) (bool, error) {
+func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
 	sub, err := pool.PrepSubmit(data)
 	if err != nil {
 		return false, err
@@ -310,7 +314,7 @@ func GetPoolWorkSubmit(data []byte, pool *Stratum) (bool, error) {
 		return false, err
 	}
 
-	pool.submitted = true
+	pool.Submitted = true
 
 	return true, nil
 }
