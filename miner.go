@@ -239,16 +239,18 @@ func (m *Miner) printStatsThread() {
 	defer t.Stop()
 
 	for {
-		valid := atomic.LoadUint64(&m.validShares)
-		minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v",
-			valid,
-			atomic.LoadUint64(&m.invalidShares),
-			atomic.LoadUint64(&m.staleShares))
+		if !cfg.Benchmark {
+			valid := atomic.LoadUint64(&m.validShares)
+			minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v",
+				valid,
+				atomic.LoadUint64(&m.invalidShares),
+				atomic.LoadUint64(&m.staleShares))
 
-		secondsElapsed := uint32(time.Now().Unix()) - m.started
-		if (secondsElapsed / 60) > 0 {
-			utility := float64(valid) / (float64(secondsElapsed) / float64(60))
-			minrLog.Infof("Global utility (accepted shares/min): %v", utility)
+			secondsElapsed := uint32(time.Now().Unix()) - m.started
+			if (secondsElapsed / 60) > 0 {
+				utility := float64(valid) / (float64(secondsElapsed) / float64(60))
+				minrLog.Infof("Global utility (accepted shares/min): %v", utility)
+			}
 		}
 		for _, d := range m.devices {
 			d.PrintStats()

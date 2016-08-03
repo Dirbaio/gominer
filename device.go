@@ -479,15 +479,17 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 		d.allDiffOneShares++
 	}
 
-	// Assess versus the pool or daemon target.
-	if hashNum.Cmp(d.work.Target) > 0 {
-		minrLog.Debugf("GPU #%d: Hash %v bigger than target %032x (boo)",
-			d.index, hash, d.work.Target.Bytes())
-	} else {
-		minrLog.Infof("GPU #%d: Found hash with work below target! %v (yay)",
-			d.index, hash)
-		d.validShares++
-		d.workDone <- data
+	if !cfg.Benchmark {
+		// Assess versus the pool or daemon target.
+		if hashNum.Cmp(d.work.Target) > 0 {
+			minrLog.Debugf("GPU #%d: Hash %v bigger than target %032x (boo)",
+				d.index, hash, d.work.Target.Bytes())
+		} else {
+			minrLog.Infof("GPU #%d: Found hash with work below target! %v (yay)",
+				d.index, hash)
+			d.validShares++
+			d.workDone <- data
+		}
 	}
 }
 
