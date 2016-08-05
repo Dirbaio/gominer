@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,7 @@ var ErrStatumStaleWork = fmt.Errorf("Stale work, throwing away")
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
 type Stratum struct {
+	sync.Mutex
 	cfg           Config
 	Conn          net.Conn
 	Reader        *bufio.Reader
@@ -279,112 +281,129 @@ func (s *Stratum) Listen() {
 
 		switch resp.(type) {
 		case *BasicReply:
-			aResp := resp.(*BasicReply)
-			if int(aResp.ID.(uint64)) == int(s.authID) {
-				if aResp.Result {
-					log.Info("Logged in")
-				} else {
-					log.Error("Auth failure.")
-				}
-			}
-			if aResp.ID == s.submitID {
-				if aResp.Result {
-					log.Debugf("Share accepted")
-				} else {
-					log.Error("Share rejected: ", aResp.Error.ErrStr)
-				}
-				s.Submitted = false
-			}
-
+			s.handleBasicReply(resp)
 		case StratumMsg:
-			nResp := resp.(StratumMsg)
-			log.Trace(nResp)
-			// Too much is still handled in unmarshaler.  Need to
-			// move stuff other than unmarshalling here.
-			switch nResp.Method {
-			case "client.show_message":
-				log.Info(nResp.Params)
-			case "client.reconnect":
-				log.Info("Reconnect requested")
-				wait, err := strconv.Atoi(nResp.Params[2])
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				time.Sleep(time.Duration(wait) * time.Second)
-				pool := nResp.Params[0] + ":" + nResp.Params[1]
-				s.cfg.Pool = pool
-				err = s.Reconnect()
-				if err != nil {
-					log.Error(err)
-					// XXX should just die at this point
-					// but we don't really have access to
-					// the channel to end everything.
-					return
-				}
-
-			case "client.get_version":
-				log.Debug("get_version request received.")
-				msg := StratumMsg{
-					Method: nResp.Method,
-					ID:     nResp.ID,
-					Params: []string{"decred-gominer/" + s.cfg.Version},
-				}
-				m, err := json.Marshal(msg)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				_, err = s.Conn.Write(m)
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-				_, err = s.Conn.Write([]byte("\n"))
-				if err != nil {
-					log.Error(err)
-					continue
-				}
-			}
-
+			s.handleStratumMsg(resp)
 		case NotifyRes:
-			nResp := resp.(NotifyRes)
-			s.PoolWork.JobID = nResp.JobID
-			s.PoolWork.CB1 = nResp.GenTX1
-			heightHex := nResp.GenTX1[186:188] + nResp.GenTX1[184:186]
-			height, err := strconv.ParseInt(heightHex, 16, 32)
-			if err != nil {
-				log.Tracef("failed to parse height %v", err)
-				height = 0
-			}
-
-			s.PoolWork.Height = height
-			s.PoolWork.CB2 = nResp.GenTX2
-			s.PoolWork.Hash = nResp.Hash
-			s.PoolWork.Nbits = nResp.Nbits
-			s.PoolWork.Version = nResp.BlockVersion
-			parsedNtime, err := strconv.ParseInt(nResp.Ntime, 16, 64)
-			if err != nil {
-				log.Error(err)
-			}
-
-			s.PoolWork.Ntime = nResp.Ntime
-			s.PoolWork.NtimeDelta = parsedNtime - time.Now().Unix()
-			s.PoolWork.Clean = nResp.CleanJobs
-			s.PoolWork.NewWork = true
-			log.Trace("notify: ", spew.Sdump(nResp))
-
+			s.handleNotifyRes(resp)
 		case *SubscribeReply:
-			nResp := resp.(*SubscribeReply)
-			s.PoolWork.ExtraNonce1 = nResp.ExtraNonce1
-			s.PoolWork.ExtraNonce2Length = nResp.ExtraNonce2Length
-			log.Info("Subscribe reply received.")
-			log.Trace(spew.Sdump(resp))
-
+			s.handleSubscribeReply(resp)
 		default:
 			log.Info("Unhandled message: ", result)
 		}
 	}
+}
+
+func (s *Stratum) handleBasicReply(resp interface{}) {
+	s.Lock()
+	defer s.Unlock()
+	aResp := resp.(*BasicReply)
+
+	if int(aResp.ID.(uint64)) == int(s.authID) {
+		if aResp.Result {
+			log.Info("Logged in")
+		} else {
+			log.Error("Auth failure.")
+		}
+	}
+	if aResp.ID == s.submitID {
+		if aResp.Result {
+			log.Debugf("Share accepted")
+		} else {
+			log.Error("Share rejected: ", aResp.Error.ErrStr)
+		}
+		s.Submitted = false
+	}
+}
+
+func (s *Stratum) handleStratumMsg(resp interface{}) {
+	nResp := resp.(StratumMsg)
+	log.Trace(nResp)
+	// Too much is still handled in unmarshaler.  Need to
+	// move stuff other than unmarshalling here.
+	switch nResp.Method {
+	case "client.show_message":
+		log.Info(nResp.Params)
+	case "client.reconnect":
+		log.Info("Reconnect requested")
+		wait, err := strconv.Atoi(nResp.Params[2])
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		time.Sleep(time.Duration(wait) * time.Second)
+		pool := nResp.Params[0] + ":" + nResp.Params[1]
+		s.cfg.Pool = pool
+		err = s.Reconnect()
+		if err != nil {
+			log.Error(err)
+			// XXX should just die at this point
+			// but we don't really have access to
+			// the channel to end everything.
+			return
+		}
+
+	case "client.get_version":
+		log.Debug("get_version request received.")
+		msg := StratumMsg{
+			Method: nResp.Method,
+			ID:     nResp.ID,
+			Params: []string{"decred-gominer/" + s.cfg.Version},
+		}
+		m, err := json.Marshal(msg)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		_, err = s.Conn.Write(m)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		_, err = s.Conn.Write([]byte("\n"))
+		if err != nil {
+			log.Error(err)
+			return
+		}
+	}
+}
+
+func (s *Stratum) handleNotifyRes(resp interface{}) {
+	s.Lock()
+	defer s.Unlock()
+	nResp := resp.(NotifyRes)
+	s.PoolWork.JobID = nResp.JobID
+	s.PoolWork.CB1 = nResp.GenTX1
+	heightHex := nResp.GenTX1[186:188] + nResp.GenTX1[184:186]
+	height, err := strconv.ParseInt(heightHex, 16, 32)
+	if err != nil {
+		log.Tracef("failed to parse height %v", err)
+		height = 0
+	}
+
+	s.PoolWork.Height = height
+	s.PoolWork.CB2 = nResp.GenTX2
+	s.PoolWork.Hash = nResp.Hash
+	s.PoolWork.Nbits = nResp.Nbits
+	s.PoolWork.Version = nResp.BlockVersion
+	parsedNtime, err := strconv.ParseInt(nResp.Ntime, 16, 64)
+	if err != nil {
+		log.Error(err)
+	}
+
+	s.PoolWork.Ntime = nResp.Ntime
+	s.PoolWork.NtimeDelta = parsedNtime - time.Now().Unix()
+	s.PoolWork.Clean = nResp.CleanJobs
+	s.PoolWork.NewWork = true
+	log.Trace("notify: ", spew.Sdump(nResp))
+}
+
+func (s *Stratum) handleSubscribeReply(resp interface{}) {
+	nResp := resp.(*SubscribeReply)
+	s.PoolWork.ExtraNonce1 = nResp.ExtraNonce1
+	s.PoolWork.ExtraNonce2Length = nResp.ExtraNonce2Length
+	log.Info("Subscribe reply received.")
+	log.Trace(spew.Sdump(resp))
 }
 
 // Auth sends a message to the pool to authorize a worker.
@@ -447,6 +466,8 @@ func (s *Stratum) Subscribe() error {
 // I'm sure a lot of this can be generalized but the json we deal with
 // is pretty yucky.
 func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
+	s.Lock()
+	defer s.Unlock()
 	var (
 		objmap map[string]json.RawMessage
 		method string

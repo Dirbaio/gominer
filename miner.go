@@ -212,8 +212,10 @@ func (m *Miner) workRefreshThread() {
 				}
 			}
 		} else {
+			m.pool.Lock()
 			if m.pool.PoolWork.NewWork {
 				work, err := GetPoolWork(m.pool)
+				m.pool.Unlock()
 				if err != nil {
 					minrLog.Errorf("Error in getpoolwork: %v", err)
 				} else {
@@ -221,6 +223,8 @@ func (m *Miner) workRefreshThread() {
 						d.SetWork(work)
 					}
 				}
+			} else {
+				m.pool.Unlock()
 			}
 		}
 		select {

@@ -292,6 +292,8 @@ func GetWorkSubmit(data []byte) (bool, error) {
 
 // GetPoolWorkSubmit sends the result to the stratum enabled pool
 func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
+	pool.Lock()
+	defer pool.Unlock()
 	sub, err := pool.PrepSubmit(data)
 	if err != nil {
 		return false, err

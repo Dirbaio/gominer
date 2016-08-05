@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"os"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -63,6 +64,7 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 }
 
 type Device struct {
+	sync.Mutex
 	index        int
 	platformID   cl.CL_platform_id
 	deviceID     cl.CL_device_id
@@ -458,6 +460,8 @@ func (d *Device) runDevice() error {
 }
 
 func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
+	d.Lock()
+	defer d.Unlock()
 	// Construct the final block header.
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
@@ -546,6 +550,8 @@ func (d *Device) PrintStats() {
 	}
 
 	diffOneShareHashesAvg := uint64(0x00000000FFFFFFFF)
+	d.Lock()
+	defer d.Unlock()
 	averageHashRate := (float64(diffOneShareHashesAvg) *
 		float64(d.allDiffOneShares)) /
 		float64(secondsElapsed)
