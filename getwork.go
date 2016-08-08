@@ -204,7 +204,7 @@ func GetWork() (*work.Work, error) {
 func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 	// Get Next work for stratum and mark it as used
 	if pool.PoolWork.NewWork {
-		poolLog.Info("Received new work from pool.")
+		poolLog.Debug("Received new work from pool.")
 		// Mark used
 		pool.PoolWork.NewWork = false
 
@@ -306,7 +306,7 @@ func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
 	}
 
 	// Send.
-	poolLog.Tracef("> %s", m)
+	poolLog.Tracef("%s", m)
 	_, err = pool.Conn.Write(m)
 	if err != nil {
 		return false, err

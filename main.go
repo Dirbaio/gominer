@@ -82,7 +82,7 @@ func gominerMain() error {
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		mainLog.Info("Got Control+C, exiting...")
+		mainLog.Warn("Got Control+C, exiting...")
 		m.Stop()
 	}()
 

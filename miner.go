@@ -243,7 +243,7 @@ func (m *Miner) printStatsThread() {
 	defer t.Stop()
 
 	for {
-		if !cfg.Benchmark {
+		if cfg.Pool != "" && !cfg.Benchmark {
 			valid := atomic.LoadUint64(&m.validShares)
 			minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v",
 				valid,

@@ -206,8 +206,6 @@ func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string) 
 	if err != nil {
 		return nil, err
 	}
-	// Should NOT need this.
-	//time.Sleep(5 * time.Second)
 	err = stratum.Auth()
 	if err != nil {
 		return nil, err
@@ -301,14 +299,14 @@ func (s *Stratum) handleBasicReply(resp interface{}) {
 
 	if int(aResp.ID.(uint64)) == int(s.authID) {
 		if aResp.Result {
-			log.Info("Logged in")
+			log.Debug("Logged in")
 		} else {
 			log.Error("Auth failure.")
 		}
 	}
 	if aResp.ID == s.submitID {
 		if aResp.Result {
-			log.Debugf("Share accepted")
+			log.Debug("Share accepted")
 		} else {
 			log.Error("Share rejected: ", aResp.Error.ErrStr)
 		}
@@ -325,7 +323,7 @@ func (s *Stratum) handleStratumMsg(resp interface{}) {
 	case "client.show_message":
 		log.Info(nResp.Params)
 	case "client.reconnect":
-		log.Info("Reconnect requested")
+		log.Debug("Reconnect requested")
 		wait, err := strconv.Atoi(nResp.Params[2])
 		if err != nil {
 			log.Error(err)
@@ -377,7 +375,7 @@ func (s *Stratum) handleNotifyRes(resp interface{}) {
 	heightHex := nResp.GenTX1[186:188] + nResp.GenTX1[184:186]
 	height, err := strconv.ParseInt(heightHex, 16, 32)
 	if err != nil {
-		log.Tracef("failed to parse height %v", err)
+		log.Debugf("failed to parse height %v", err)
 		height = 0
 	}
 
@@ -402,7 +400,7 @@ func (s *Stratum) handleSubscribeReply(resp interface{}) {
 	nResp := resp.(*SubscribeReply)
 	s.PoolWork.ExtraNonce1 = nResp.ExtraNonce1
 	s.PoolWork.ExtraNonce2Length = nResp.ExtraNonce2Length
-	log.Info("Subscribe reply received.")
+	log.Debug("Subscribe reply received.")
 	log.Trace(spew.Sdump(resp))
 }
 
@@ -421,7 +419,7 @@ func (s *Stratum) Auth() error {
 	}
 	s.authID = id
 	s.ID += 1
-	log.Tracef("> %v", msg)
+	log.Tracef("%v", msg)
 	m, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -450,7 +448,7 @@ func (s *Stratum) Subscribe() error {
 	if err != nil {
 		return err
 	}
-	log.Tracef("> %v", string(m))
+	log.Tracef("%v", string(m))
 	_, err = s.Conn.Write(m)
 	if err != nil {
 		return err
@@ -650,7 +648,6 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Trace(resi)
 		var nres = NotifyRes{}
 		jobID, ok := resi[0].(string)
 		if !ok {
