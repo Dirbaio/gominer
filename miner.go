@@ -86,7 +86,7 @@ func NewMiner() (*Miner, error) {
 	}
 
 	// Check the number of intensities/work sizes versus the number of devices.
-	userSetWorkSize := false
+	userSetWorkSize := true
 	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
 		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
 		userSetWorkSize = false
