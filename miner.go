@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/decred/gominer/cl"
 	"github.com/decred/gominer/stratum"
 	"github.com/decred/gominer/work"
 )
