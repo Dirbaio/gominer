@@ -75,3 +75,34 @@ func DiffToTarget(diff float64, powLimit *big.Int) (*big.Int, error) {
 
 	return target, nil
 }
+
+// RolloverExtraNonce rolls over the extraNonce if it goes over 0x00FFFFFF many
+// hashes, since the first byte is reserved for the ID.
+func RolloverExtraNonce(v *uint32) {
+	if *v&0x00FFFFFF == 0x00FFFFFF {
+		*v = *v & 0xFF000000
+	} else {
+		*v++
+	}
+}
+
+// Uint32EndiannessSwap swaps the endianness of a uint32.
+func Uint32EndiannessSwap(v uint32) uint32 {
+	return (v&0x000000FF)<<24 | (v&0x0000FF00)<<8 |
+		(v&0x00FF0000)>>8 | (v&0xFF000000)>>24
+}
+
+// FormatHashRate sets the units properly when displaying a hashrate.
+func FormatHashRate(h float64) string {
+	if h > 1000000000 {
+		return fmt.Sprintf("%.3fGH/s", h/1000000000)
+	} else if h > 1000000 {
+		return fmt.Sprintf("%.0fMH/s", h/1000000)
+	} else if h > 1000 {
+		return fmt.Sprintf("%.1fkH/s", h/1000)
+	} else if h == 0 {
+		return "0H/s"
+	}
+
+	return fmt.Sprintf("%.1f GH/s", h)
+}

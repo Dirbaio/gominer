@@ -22,6 +22,7 @@ import (
 
 	"github.com/decred/gominer/blake256"
 	"github.com/decred/gominer/cl"
+	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
 
@@ -34,6 +35,37 @@ const (
 var chainParams = &chaincfg.MainNetParams
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
+
+func getCLPlatforms() ([]cl.CL_platform_id, error) {
+	var numPlatforms cl.CL_uint
+	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
+	if status != cl.CL_SUCCESS {
+		return nil, clError(status, "CLGetPlatformIDs")
+	}
+	platforms := make([]cl.CL_platform_id, numPlatforms)
+	status = cl.CLGetPlatformIDs(numPlatforms, platforms, nil)
+	if status != cl.CL_SUCCESS {
+		return nil, clError(status, "CLGetPlatformIDs")
+	}
+	return platforms, nil
+}
+
+// getCLDevices returns the list of devices for the given platform.
+func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
+	var numDevices cl.CL_uint
+	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil,
+		&numDevices)
+	if status != cl.CL_SUCCESS {
+		return nil, clError(status, "CLGetDeviceIDs")
+	}
+	devices := make([]cl.CL_device_id, numDevices)
+	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices,
+		devices, nil)
+	if status != cl.CL_SUCCESS {
+		return nil, clError(status, "CLGetDeviceIDs")
+	}
+	return devices, nil
+}
 
 func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	var program_buffer [1][]byte
@@ -99,22 +131,6 @@ type Device struct {
 	invalidShares    uint64
 
 	quit chan struct{}
-}
-
-// Uint32EndiannessSwap swaps the endianness of a uint32.
-func Uint32EndiannessSwap(v uint32) uint32 {
-	return (v&0x000000FF)<<24 | (v&0x0000FF00)<<8 |
-		(v&0x00FF0000)>>8 | (v&0xFF000000)>>24
-}
-
-// rolloverExtraNonce rolls over the extraNonce if it goes over 0x00FFFFFF many
-// hashes, since the first byte is reserved for the ID.
-func rolloverExtraNonce(v *uint32) {
-	if *v&0x00FFFFFF == 0x00FFFFFF {
-		*v = *v & 0xFF000000
-	} else {
-		*v++
-	}
 }
 
 func clError(status cl.CL_int, f string) error {
@@ -352,7 +368,7 @@ func (d *Device) runDevice() error {
 	// different work. If the extraNonce has already been
 	// set for valid work, restore that.
 	d.extraNonce += uint32(d.index) << 24
-	d.lastBlock[work.Nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+	d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
 
 	var status cl.CL_int
 	for {
@@ -365,8 +381,8 @@ func (d *Device) runDevice() error {
 		}
 
 		// Increment extraNonce.
-		rolloverExtraNonce(&d.extraNonce)
-		d.lastBlock[work.Nonce1Word] = Uint32EndiannessSwap(d.extraNonce)
+		util.RolloverExtraNonce(&d.extraNonce)
+		d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
 
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
@@ -375,7 +391,7 @@ func (d *Device) runDevice() error {
 			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
 			ts = d.work.JobTime + diffSeconds
 		}
-		d.lastBlock[work.TimestampWord] = Uint32EndiannessSwap(ts)
+		d.lastBlock[work.TimestampWord] = util.Uint32EndiannessSwap(ts)
 
 		// arg 0: pointer to the buffer
 		obuf := d.outputBuffer
@@ -443,7 +459,7 @@ func (d *Device) runDevice() error {
 			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
 				"extraNonce %08x, workID %08x, timestamp %08x",
 				d.index, i+1, outputData[i+1], d.lastBlock[work.Nonce1Word],
-				Uint32EndiannessSwap(d.currentWorkID),
+				util.Uint32EndiannessSwap(d.currentWorkID),
 				d.lastBlock[work.TimestampWord])
 
 			// Assess the work. If it's below target, it'll be rejected
@@ -505,20 +521,6 @@ func (d *Device) SetWork(w *work.Work) {
 	d.newWork <- w
 }
 
-func formatHashrate(h float64) string {
-	if h > 1000000000 {
-		return fmt.Sprintf("%.3fGH/s", h/1000000000)
-	} else if h > 1000000 {
-		return fmt.Sprintf("%.0fMH/s", h/1000000)
-	} else if h > 1000 {
-		return fmt.Sprintf("%.1fkH/s", h/1000)
-	} else if h == 0 {
-		return "0H/s"
-	}
-
-	return fmt.Sprintf("%.1f GH/s", h)
-}
-
 func getDeviceInfo(id cl.CL_device_id,
 	name cl.CL_device_info,
 	str string) string {
@@ -559,7 +561,7 @@ func (d *Device) PrintStats() {
 	minrLog.Infof("GPU #%d (%s) reporting average hash rate %v, %v/%v valid work",
 		d.index,
 		d.deviceName,
-		formatHashrate(averageHashRate),
+		util.FormatHashRate(averageHashRate),
 		d.validShares,
 		d.validShares+d.invalidShares)
 }
