@@ -48,9 +48,29 @@ func NewMiner() (*Miner, error) {
 		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
 	}
 	platformID := platformIDs[0]
-	deviceIDs, err := getCLDevices(platformID)
+	CLdeviceIDs, err := getCLDevices(platformID)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+	}
+
+	var deviceIDs []cl.CL_device_id
+
+	// Enforce device restrictions if they exist
+	if len(cfg.DeviceIDs) > 0 {
+		for _, i := range cfg.DeviceIDs {
+			var found = false
+			for j, CLdeviceID := range CLdeviceIDs {
+				if i == j {
+					deviceIDs = append(deviceIDs, CLdeviceID)
+					found = true
+				}
+			}
+			if !found {
+				return nil, fmt.Errorf("Unable to find GPU #%d", i)
+			}
+		}
+	} else {
+		copy(deviceIDs, CLdeviceIDs)
 	}
 
 	// Check the number of intensities/work sizes versus the number of devices.
@@ -77,8 +97,16 @@ func NewMiner() (*Miner, error) {
 
 	m.devices = make([]*Device, len(deviceIDs))
 	for i, deviceID := range deviceIDs {
+		// Use the real device order so i.e. -D 1 doesn't print GPU #0
+		realnum := i
+		for iCL, CLdeviceID := range CLdeviceIDs {
+			if CLdeviceID == deviceID {
+				realnum = iCL
+			}
+		}
+
 		var err error
-		m.devices[i], err = NewDevice(i, platformID, deviceID, m.workDone)
+		m.devices[i], err = NewDevice(realnum, platformID, deviceID, m.workDone)
 		if err != nil {
 			return nil, err
 		}

@@ -43,6 +43,7 @@ var (
 )
 
 type config struct {
+	ListDevices bool `short:"l" long:"listdevices" description:"List number of devices."`
 	ShowVersion bool `short:"V" long:"version" description:"Display version information and exit"`
 
 	// Config / log options
@@ -72,7 +73,9 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
-	Autocalibrate int      `short:"A" long:"autocalibrate" description:"Use GPU autocalibration to achieve a kernel execution timing of the passed number of milliseconds"`
+	Autocalibrate int    `short:"A" long:"autocalibrate" description:"Use GPU autocalibration to achieve a kernel execution timing of the passed number of milliseconds"`
+	Devices       string `short:"D" long:"devices" description:"Single device ID or a comma separated list of device IDs to use."`
+	DeviceIDs     []int
 	Intensity     []string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device, use multiple flags for multiple devices"`
 	IntensityInts []int
 	WorkSize      []string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity), use multiple flags for multiple devices"`
@@ -262,6 +265,11 @@ func loadConfig() (*config, []string, error) {
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
+	if preCfg.ListDevices {
+		ListDevices()
+		os.Exit(0)
+	}
+
 	if preCfg.ShowVersion {
 		fmt.Println(appName, "version", version())
 		os.Exit(0)
@@ -303,6 +311,37 @@ func loadConfig() (*config, []string, error) {
 		err := fmt.Errorf(str, "loadConfig")
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
+	}
+
+	if len(cfg.Devices) > 0 {
+		// Parse a list like -D 1,2
+		if strings.Contains(cfg.Devices, ",") {
+			specifiedDevices := strings.Split(cfg.Devices, ",")
+			cfg.DeviceIDs = make([]int, len(specifiedDevices))
+			for i := range specifiedDevices {
+				j, err := strconv.Atoi(specifiedDevices[i])
+				if err != nil {
+					err := fmt.Errorf("Could not convert device number %v "+
+						"(%v) to int: %s", i+1, specifiedDevices[i], err.Error())
+					fmt.Fprintln(os.Stderr, err)
+					return nil, nil, err
+				}
+
+				cfg.DeviceIDs[i] = j
+			}
+			// Use specified device like -D 1
+		} else {
+			cfg.DeviceIDs = make([]int, 1)
+			i, err := strconv.Atoi(cfg.Devices)
+			if err != nil {
+				err := fmt.Errorf("Could not convert specified device %v "+
+					"to int: %s", cfg.Devices, err.Error())
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+
+			cfg.DeviceIDs[0] = i
+		}
 	}
 
 	// Check the intensities if the user is setting that.

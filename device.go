@@ -142,6 +142,26 @@ func clError(status cl.CL_int, f string) error {
 		cl.ERROR_CODES_STRINGS[-status], status)
 }
 
+// ListDevices prints a list of GPUs present.
+func ListDevices() {
+	platformIDs, err := getCLPlatforms()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not get CL platforms: %v\n", err)
+		os.Exit(1)
+	}
+
+	platformID := platformIDs[0]
+	deviceIDs, err := getCLDevices(platformID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Could not get CL devices for platform: %v\n", err)
+		os.Exit(1)
+	}
+
+	for i, deviceID := range deviceIDs {
+		fmt.Printf("GPU #%d: %s\n", i, getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"))
+	}
+}
+
 func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id,
 	workDone chan []byte) (*Device, error) {
 	d := &Device{
