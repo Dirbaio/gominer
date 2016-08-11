@@ -71,7 +71,7 @@ func NewMiner() (*Miner, error) {
 			}
 		}
 	} else {
-		copy(deviceIDs, CLdeviceIDs)
+		deviceIDs = CLdeviceIDs
 	}
 
 	// Check the number of intensities/work sizes versus the number of devices.
