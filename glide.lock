@@ -1,5 +1,5 @@
 hash: 91c7f7aacbc4b5f82b14c9de3212c07257421b40c37926f571c3bc79f19c6060
-updated: 2016-07-27T16:32:52.717630149-04:00
+updated: 2016-08-16T11:10:41.055231248-04:00
 imports:
 - name: github.com/btcsuite/btclog
   version: f96df2375f37300305f329b8e5258764b4f19a7f
@@ -45,4 +45,8 @@ imports:
   version: b0909d3f798b97a03c9e77023f97a5301a2a7900
   subpackages:
   - edwards25519
+- name: github.com/mumax/3
+  version: 9859625390900fa7029ce8cfdeb430f239e502d4
+  subpackages:
+  - cuda/cu
 testImports: []

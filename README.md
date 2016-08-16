@@ -2,7 +2,10 @@
 
 ## Installation
 
-You need to have OpenCL installed. To download and build gominer, run:
+You need to have the OpenCL and CUDA development libraries
+installed. You only need the runtime and drives for the one you plan
+on running (CUDA for nvidia, OpenCL for anything) To download and
+build gominer, run:
 
 ```
 go get -u github.com/Masterminds/glide
@@ -15,10 +18,10 @@ go install $(glide nv)
 ```
 
 On Ubuntu 16.04 you can install the necessary OpenCL packages (for
-Intel Graphics cards) with
+Intel Graphics cards) and CUDA libraries with:
 
 ```
-sudo apt-get install beignet-dev
+sudo apt-get install beignet-dev nvidia-cuda-dev nvidia-cuda-toolkit
 ```
 
 Other graphics cards will need different libraries.  We have built

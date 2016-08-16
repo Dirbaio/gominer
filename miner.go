@@ -45,22 +45,19 @@ func NewMiner() (*Miner, error) {
 		m.pool = s
 	}
 
-	platformIDs, err := getCLPlatforms()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
-	}
-
-	deviceListIndex := 0
-	deviceListEnabledCount := 0
-
-	for p := range platformIDs {
-		platformID := platformIDs[p]
-		CLdeviceIDs, err := getCLDevices(platformID)
+	if cfg.UseCuda {
+		CUdeviceIDs, err := getCUInfo()
 		if err != nil {
-			return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+			return nil, err
 		}
 
-		for _, CLdeviceID := range CLdeviceIDs {
+		deviceListIndex := 0
+		deviceListEnabledCount := 0
+
+		// XXX Can probably combine these bits with the opencl ones once
+		// I decide what to do about the types.
+
+		for _, CUDeviceID := range CUdeviceIDs {
 			miningAllowed := false
 
 			// Enforce device restrictions if they exist
@@ -75,7 +72,7 @@ func NewMiner() (*Miner, error) {
 			}
 
 			if miningAllowed {
-				newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, m.workDone)
+				newDevice, err := NewCuDevice(deviceListIndex, deviceListEnabledCount, CUDeviceID, m.workDone)
 				deviceListEnabledCount++
 				m.devices = append(m.devices, newDevice)
 				if err != nil {
@@ -84,10 +81,55 @@ func NewMiner() (*Miner, error) {
 			}
 			deviceListIndex++
 		}
-	}
 
-	if deviceListEnabledCount == 0 {
-		return nil, fmt.Errorf("No devices started")
+		if deviceListEnabledCount == 0 {
+			return nil, fmt.Errorf("No devices started")
+		}
+
+	} else {
+		platformIDs, err := getCLPlatforms()
+		if err != nil {
+			return nil, fmt.Errorf("Could not get CL platforms: %v", err)
+		}
+
+		deviceListIndex := 0
+		deviceListEnabledCount := 0
+
+		for p := range platformIDs {
+			platformID := platformIDs[p]
+			CLdeviceIDs, err := getCLDevices(platformID)
+			if err != nil {
+				return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+			}
+
+			for _, CLdeviceID := range CLdeviceIDs {
+				miningAllowed := false
+
+				// Enforce device restrictions if they exist
+				if len(cfg.DeviceIDs) > 0 {
+					for _, i := range cfg.DeviceIDs {
+						if deviceListIndex == i {
+							miningAllowed = true
+						}
+					}
+				} else {
+					miningAllowed = true
+				}
+				if miningAllowed {
+					newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, m.workDone)
+					deviceListEnabledCount++
+					m.devices = append(m.devices, newDevice)
+					if err != nil {
+						return nil, err
+					}
+					deviceListIndex++
+				}
+			}
+
+			if deviceListEnabledCount == 0 {
+				return nil, fmt.Errorf("No devices started")
+			}
+		}
 	}
 
 	m.started = uint32(time.Now().Unix())
