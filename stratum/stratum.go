@@ -35,8 +35,8 @@ import (
 
 var chainParams = &chaincfg.MainNetParams
 
-// ErrStatumStaleWork indicates that the work to send to the pool was stale.
-var ErrStatumStaleWork = fmt.Errorf("Stale work, throwing away")
+// ErrStratumStaleWork indicates that the work to send to the pool was stale.
+var ErrStratumStaleWork = fmt.Errorf("Stale work, throwing away")
 
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
@@ -54,6 +54,9 @@ type Stratum struct {
 	Submitted     bool
 	PoolWork      NotifyWork
 	latestJobTime uint32
+
+	ValidShares   uint64
+	InvalidShares uint64
 }
 
 // Config holdes the config options that may be used by a stratum pool.
@@ -306,8 +309,15 @@ func (s *Stratum) handleBasicReply(resp interface{}) {
 	}
 	if aResp.ID == s.submitID {
 		if aResp.Result {
+			val := atomic.LoadUint64(&s.ValidShares)
+			val++
+			atomic.StoreUint64(&s.ValidShares, val)
 			log.Debug("Share accepted")
 		} else {
+			inval := atomic.LoadUint64(&s.InvalidShares)
+			inval++
+			atomic.StoreUint64(&s.InvalidShares, inval)
+
 			log.Error("Share rejected: ", aResp.Error.ErrStr)
 		}
 		s.Submitted = false
@@ -953,7 +963,7 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 
 	latestWorkTs := atomic.LoadUint32(&s.latestJobTime)
 	if uint32(submittedHeader.Timestamp.Unix()) != latestWorkTs {
-		return sub, ErrStatumStaleWork
+		return sub, ErrStratumStaleWork
 	}
 
 	// The timestamp string should be:
@@ -970,7 +980,6 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	nonceStr := fmt.Sprintf("%08x", submittedHeader.Nonce)
 	xnonceStr := hex.EncodeToString(data[144:156])
 
-	// pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, nvotestr
 	sub.Params = []string{s.cfg.User, s.PoolWork.JobID, xnonceStr, timestampStr,
 		nonceStr}
 

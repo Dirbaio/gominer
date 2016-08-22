@@ -152,10 +152,10 @@ func (m *Miner) workSubmitThread() {
 					m.needsWorkRefresh <- struct{}{}
 				}
 			} else {
-				accepted, err := GetPoolWorkSubmit(data, m.pool)
+				submitted, err := GetPoolWorkSubmit(data, m.pool)
 				if err != nil {
 					switch err {
-					case stratum.ErrStatumStaleWork:
+					case stratum.ErrStratumStaleWork:
 						stale := atomic.LoadUint64(&m.staleShares)
 						stale++
 						atomic.StoreUint64(&m.staleShares, stale)
@@ -170,19 +170,9 @@ func (m *Miner) workSubmitThread() {
 						minrLog.Errorf("Error submitting work to pool: %v", err)
 					}
 				} else {
-					if accepted {
-						val := atomic.LoadUint64(&m.validShares)
-						val++
-						atomic.StoreUint64(&m.validShares, val)
-
+					if submitted {
 						minrLog.Debugf("Submitted work to pool successfully: %v",
-							accepted)
-					} else {
-						inval := atomic.LoadUint64(&m.invalidShares)
-						inval++
-						atomic.StoreUint64(&m.invalidShares, inval)
-
-						m.invalidShares++
+							submitted)
 					}
 					m.needsWorkRefresh <- struct{}{}
 				}
@@ -241,10 +231,10 @@ func (m *Miner) printStatsThread() {
 
 	for {
 		if cfg.Pool != "" && !cfg.Benchmark {
-			valid := atomic.LoadUint64(&m.validShares)
+			valid := atomic.LoadUint64(&m.pool.ValidShares)
 			minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v",
 				valid,
-				atomic.LoadUint64(&m.invalidShares),
+				atomic.LoadUint64(&m.pool.InvalidShares),
 				atomic.LoadUint64(&m.staleShares))
 
 			secondsElapsed := uint32(time.Now().Unix()) - m.started
