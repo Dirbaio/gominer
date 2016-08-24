@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,28 +73,6 @@ func NewMiner() (*Miner, error) {
 		deviceIDs = CLdeviceIDs
 	}
 
-	// Check the number of intensities/work sizes versus the number of devices.
-	userSetWorkSize := true
-	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
-		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-		userSetWorkSize = false
-	}
-	if userSetWorkSize {
-		if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-			if len(cfg.Intensity) != len(deviceIDs) {
-				return nil, fmt.Errorf("Intensities supplied, but number supplied "+
-					"did not match the number of GPUs (got %v, want %v)",
-					len(cfg.Intensity), len(deviceIDs))
-			}
-		} else {
-			if len(cfg.WorkSize) != len(deviceIDs) {
-				return nil, fmt.Errorf("WorkSize supplied, but number supplied "+
-					"did not match the number of GPUs (got %v, want %v)",
-					len(cfg.WorkSize), len(deviceIDs))
-			}
-		}
-	}
-
 	m.devices = make([]*Device, len(deviceIDs))
 	for i, deviceID := range deviceIDs {
 		// Use the real device order so i.e. -D 1 doesn't print GPU #0
@@ -107,7 +84,7 @@ func NewMiner() (*Miner, error) {
 		}
 
 		var err error
-		m.devices[i], err = NewDevice(realnum, platformID, deviceID, m.workDone)
+		m.devices[i], err = NewDevice(realnum, i, platformID, deviceID, m.workDone)
 		if err != nil {
 			return nil, err
 		}

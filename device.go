@@ -11,7 +11,6 @@ import (
 	"math"
 	"math/big"
 	"os"
-	"reflect"
 	"sync"
 	"time"
 	"unsafe"
@@ -162,7 +161,7 @@ func ListDevices() {
 	}
 }
 
-func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id,
+func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.CL_device_id,
 	workDone chan []byte) (*Device, error) {
 	d := &Device{
 		index:      index,
@@ -225,14 +224,14 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 			minrLog.Errorf("Could not obtain compilation error log: %v",
 				clError(status, "CLGetProgramBuildInfo"))
 		}
-		var program_log interface{}
+		var programLog interface{}
 		status = cl.CLGetProgramBuildInfo(d.program, deviceID,
-			cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
+			cl.CL_PROGRAM_BUILD_LOG, logSize, &programLog, nil)
 		if status != cl.CL_SUCCESS {
 			minrLog.Errorf("Could not obtain compilation error log: %v",
 				clError(status, "CLGetProgramBuildInfo"))
 		}
-		minrLog.Errorf("%s\n", program_log)
+		minrLog.Errorf("%s\n", programLog)
 
 		return nil, err
 	}
@@ -248,31 +247,58 @@ func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id
 	// Autocalibrate the desired work size for the kernel, or use one of the
 	// values passed explicitly by the use.
 	// The intensity or worksize must be set by the user.
-	userSetWorkSize := true
-	if reflect.DeepEqual(cfg.Intensity, defaultIntensity) &&
-		reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-		userSetWorkSize = false
+	userSetWorkSize := false
+	if len(cfg.IntensityInts) > 0 || len(cfg.WorkSizeInts) > 0 {
+		userSetWorkSize = true
 	}
 
 	var globalWorkSize uint32
 	if !userSetWorkSize {
-		idealWorkSize, err := d.calcWorkSizeForMilliseconds(cfg.Autocalibrate)
+		// Apply the first setting as a global setting
+		calibrateTime := cfg.AutocalibrateInts[0]
+
+		// Override with the per-device setting if it exists
+		for i := range cfg.AutocalibrateInts {
+			if i == order {
+				calibrateTime = cfg.AutocalibrateInts[i]
+			}
+		}
+
+		idealWorkSize, err := d.calcWorkSizeForMilliseconds(calibrateTime)
 		if err != nil {
 			return nil, err
 		}
 
 		minrLog.Debugf("Autocalibration successful, work size for %v"+
 			"ms per kernel execution on device %v determined to be %v",
-			cfg.Autocalibrate, d.index, idealWorkSize)
+			calibrateTime, d.index, idealWorkSize)
 
 		globalWorkSize = idealWorkSize
 	} else {
-		if reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-			globalWorkSize = 1 << uint32(cfg.IntensityInts[d.index])
-		} else {
-			globalWorkSize = uint32(cfg.WorkSizeInts[d.index])
+		if len(cfg.IntensityInts) > 0 {
+			// Apply the first setting as a global setting
+			globalWorkSize = 1 << uint32(cfg.IntensityInts[0])
+
+			// Override with the per-device setting if it exists
+			for i := range cfg.IntensityInts {
+				if i == order {
+					globalWorkSize = 1 << uint32(cfg.IntensityInts[order])
+				}
+			}
+		}
+		if len(cfg.WorkSizeInts) > 0 {
+			// Apply the first setting as a global setting
+			globalWorkSize = uint32(cfg.WorkSizeInts[0])
+
+			// Override with the per-device setting if it exists
+			for i := range cfg.WorkSizeInts {
+				if i == order {
+					globalWorkSize = uint32(cfg.WorkSizeInts[order])
+				}
+			}
 		}
 	}
+
 	intensity := math.Log2(float64(globalWorkSize))
 	minrLog.Infof("GPU #%d: Work size set to %v ('intensity' %v)",
 		d.index, globalWorkSize, intensity)

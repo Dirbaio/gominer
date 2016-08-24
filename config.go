@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -33,8 +32,6 @@ var (
 	defaultRPCCertFile   = filepath.Join(dcrdHomeDir, "rpc.cert")
 	defaultLogDir        = filepath.Join(minerHomeDir, defaultLogDirname)
 	defaultAutocalibrate = 500
-	defaultIntensity     = []string{}
-	defaultWorkSize      = []string{}
 
 	// Took these values from cgminer.
 	minIntensity = 8
@@ -73,13 +70,14 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
-	Autocalibrate int    `short:"A" long:"autocalibrate" description:"Use GPU autocalibration to achieve a kernel execution timing of the passed number of milliseconds"`
-	Devices       string `short:"D" long:"devices" description:"Single device ID or a comma separated list of device IDs to use."`
-	DeviceIDs     []int
-	Intensity     []string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device, use multiple flags for multiple devices"`
-	IntensityInts []int
-	WorkSize      []string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity), use multiple flags for multiple devices"`
-	WorkSizeInts  []int
+	Autocalibrate     string `short:"A" long:"autocalibrate" description:"GPU kernel execution target time in milliseconds. Single global value or a comma separated list."`
+	AutocalibrateInts []int
+	Devices           string `short:"D" long:"devices" description:"Single device ID or a comma separated list of device IDs to use."`
+	DeviceIDs         []int
+	Intensity         string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device. Single global value or a comma separated list."`
+	IntensityInts     []int
+	WorkSize          string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity). Single global value or a comma separated list."`
+	WorkSizeInts      []int
 
 	// Pool related options
 	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port)"`
@@ -230,15 +228,12 @@ func cleanAndExpandPath(path string) string {
 func loadConfig() (*config, []string, error) {
 	// Default config.
 	cfg := config{
-		ConfigFile:    defaultConfigFile,
-		DebugLevel:    defaultLogLevel,
-		LogDir:        defaultLogDir,
-		RPCServer:     defaultRPCServer,
-		RPCCert:       defaultRPCCertFile,
-		Autocalibrate: defaultAutocalibrate,
-		Intensity:     defaultIntensity,
-		ClKernel:      defaultClKernel,
-		WorkSize:      defaultWorkSize,
+		ConfigFile: defaultConfigFile,
+		DebugLevel: defaultLogLevel,
+		LogDir:     defaultLogDir,
+		RPCServer:  defaultRPCServer,
+		RPCCert:    defaultRPCCertFile,
+		ClKernel:   defaultClKernel,
 	}
 
 	// Create the home directory if it doesn't already exist.
@@ -313,6 +308,43 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
+	// Check the autocalibrations if the user is setting that.
+	if len(cfg.Autocalibrate) > 0 {
+		// Parse a list like -A 450,600
+		if strings.Contains(cfg.Autocalibrate, ",") {
+			specifiedAutocalibrates := strings.Split(cfg.Autocalibrate, ",")
+			cfg.AutocalibrateInts = make([]int, len(specifiedAutocalibrates))
+			for i := range specifiedAutocalibrates {
+				j, err := strconv.Atoi(specifiedAutocalibrates[i])
+				if err != nil {
+					err := fmt.Errorf("Could not convert autocalibration "+
+						"(%v) to int: %s", specifiedAutocalibrates[i],
+						err.Error())
+					fmt.Fprintln(os.Stderr, err)
+					return nil, nil, err
+				}
+
+				cfg.AutocalibrateInts[i] = j
+			}
+			// Use specified device like -A 600
+		} else {
+			cfg.AutocalibrateInts = make([]int, 1)
+			i, err := strconv.Atoi(cfg.Autocalibrate)
+			if err != nil {
+				err := fmt.Errorf("Could not convert autocalibration %v "+
+					"to int: %s", cfg.Autocalibrate, err.Error())
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+
+			cfg.AutocalibrateInts[0] = i
+		}
+		// Apply default
+	} else {
+		cfg.AutocalibrateInts = []int{defaultAutocalibrate}
+	}
+
+	// Check the devices if the user is setting that.
 	if len(cfg.Devices) > 0 {
 		// Parse a list like -D 1,2
 		if strings.Contains(cfg.Devices, ",") {
@@ -322,7 +354,8 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedDevices[i])
 				if err != nil {
 					err := fmt.Errorf("Could not convert device number %v "+
-						"(%v) to int: %s", i+1, specifiedDevices[i], err.Error())
+						"(%v) to int: %s", i+1, specifiedDevices[i],
+						err.Error())
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -344,61 +377,101 @@ func loadConfig() (*config, []string, error) {
 		}
 	}
 
-	// Check the intensities if the user is setting that.
-	cfg.IntensityInts = make([]int, len(cfg.Intensity))
-	if !reflect.DeepEqual(cfg.Intensity, defaultIntensity) {
-		for i := range cfg.Intensity {
-			var err error
-			cfg.IntensityInts[i], err = strconv.Atoi(cfg.Intensity[i])
+	// Check the intensity if the user is setting that.
+	if len(cfg.Intensity) > 0 {
+		// Parse a list like -i 29,30
+		if strings.Contains(cfg.Intensity, ",") {
+			specifiedIntensities := strings.Split(cfg.Intensity, ",")
+			cfg.IntensityInts = make([]int, len(specifiedIntensities))
+			for i := range specifiedIntensities {
+				j, err := strconv.Atoi(specifiedIntensities[i])
+				if err != nil {
+					err := fmt.Errorf("Could not convert intensity "+
+						"(%v) to int: %s", specifiedIntensities[i],
+						err.Error())
+					fmt.Fprintln(os.Stderr, err)
+					return nil, nil, err
+				}
+
+				cfg.IntensityInts[i] = j
+			}
+			// Use specified intensity like -i 29
+		} else {
+			cfg.IntensityInts = make([]int, 1)
+			i, err := strconv.Atoi(cfg.Intensity)
 			if err != nil {
-				err := fmt.Errorf("Could not convert intensity number %v "+
-					"(%v) to int: %s", i, cfg.Intensity[i], err.Error())
+				err := fmt.Errorf("Could not convert intensity %v "+
+					"to int: %s", cfg.Intensity, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
 
-			if (cfg.IntensityInts[i] < minIntensity) ||
-				(cfg.IntensityInts[i] > maxIntensity) {
-				err := fmt.Errorf("Intensity %v (device %v) not within "+
-					"range %v to %v.", cfg.IntensityInts[i], i, minIntensity,
-					maxIntensity)
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
+			cfg.IntensityInts[0] = i
 		}
 	}
 
-	// Check the work size.
-	cfg.WorkSizeInts = make([]int, len(cfg.WorkSize))
-	if !reflect.DeepEqual(cfg.WorkSize, defaultWorkSize) {
-		for i := range cfg.WorkSize {
-			var err error
-			cfg.WorkSizeInts[i], err = strconv.Atoi(cfg.WorkSize[i])
+	for i := range cfg.IntensityInts {
+		if (cfg.IntensityInts[i] < minIntensity) ||
+			(cfg.IntensityInts[i] > maxIntensity) {
+			err := fmt.Errorf("Intensity %v not within "+
+				"range %v to %v.", cfg.IntensityInts[i], minIntensity,
+				maxIntensity)
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+	}
+
+	// Check the work size if the user is setting that.
+	if len(cfg.WorkSize) > 0 {
+		// Parse a list like -W 536870912,1073741824
+		if strings.Contains(cfg.WorkSize, ",") {
+			specifiedWorkSizes := strings.Split(cfg.WorkSize, ",")
+			cfg.WorkSizeInts = make([]int, len(specifiedWorkSizes))
+			for i := range specifiedWorkSizes {
+				j, err := strconv.Atoi(specifiedWorkSizes[i])
+				if err != nil {
+					err := fmt.Errorf("Could not convert worksize "+
+						"(%v) to int: %s", specifiedWorkSizes[i],
+						err.Error())
+					fmt.Fprintln(os.Stderr, err)
+					return nil, nil, err
+				}
+
+				cfg.WorkSizeInts[i] = j
+			}
+			// Use specified worksize like -W 1073741824
+		} else {
+			cfg.WorkSizeInts = make([]int, 1)
+			i, err := strconv.Atoi(cfg.WorkSize)
 			if err != nil {
-				err := fmt.Errorf("Could not convert work size number %v "+
-					"(%v) to int: %s", i, cfg.Intensity[i], err.Error())
+				err := fmt.Errorf("Could not convert worksize %v "+
+					"to int: %s", cfg.WorkSize, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
 
-			if cfg.WorkSizeInts[i] < 0 {
-				err := fmt.Errorf("Zero or negative WorkSize passed: %v",
-					cfg.WorkSizeInts[i])
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
-			if cfg.WorkSizeInts[i] > maxWorkSize {
-				err := fmt.Errorf("Too big WorkSize passed: %v, max %v",
-					cfg.WorkSizeInts[i], maxWorkSize)
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
-			if cfg.WorkSizeInts[i]%256 != 0 {
-				err := fmt.Errorf("Work size %v not a multiple of 256",
-					cfg.WorkSizeInts[i])
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
+			cfg.WorkSizeInts[0] = i
+		}
+	}
+
+	for i := range cfg.WorkSizeInts {
+		if cfg.WorkSizeInts[i] < 0 {
+			err := fmt.Errorf("Zero or negative WorkSize passed: %v",
+				cfg.WorkSizeInts[i])
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+		if cfg.WorkSizeInts[i] > maxWorkSize {
+			err := fmt.Errorf("Too big WorkSize passed: %v, max %v",
+				cfg.WorkSizeInts[i], maxWorkSize)
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+		if cfg.WorkSizeInts[i]%256 != 0 {
+			err := fmt.Errorf("Work size %v not a multiple of 256",
+				cfg.WorkSizeInts[i])
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
 		}
 	}
 
