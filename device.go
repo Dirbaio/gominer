@@ -67,31 +67,31 @@ func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
 }
 
 func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
-	var program_buffer [1][]byte
-	var program_size [1]cl.CL_size_t
+	var programBuffer [1][]byte
+	var programSize [1]cl.CL_size_t
 
 	// Read each program file and place content into buffer array.
-	program_handle, err := os.Open(filename)
+	programHandle, err := os.Open(filename)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer program_handle.Close()
+	defer programHandle.Close()
 
 	buf := bytes.NewBuffer(nil)
-	_, err = io.Copy(buf, program_handle)
+	_, err = io.Copy(buf, programHandle)
 	if err != nil {
 		return nil, nil, err
 	}
 	str := string(buf.Bytes())
-	program_final := []byte(str)
+	programFinal := []byte(str)
 
-	program_size[0] = cl.CL_size_t(len(program_final))
-	program_buffer[0] = make([]byte, program_size[0])
-	for i := range program_final {
-		program_buffer[0][i] = program_final[i]
+	programSize[0] = cl.CL_size_t(len(programFinal))
+	programBuffer[0] = make([]byte, programSize[0])
+	for i := range programFinal {
+		programBuffer[0][i] = programFinal[i]
 	}
 
-	return program_buffer[:], program_size[:], nil
+	return programBuffer[:], programSize[:], nil
 }
 
 type Device struct {
@@ -134,7 +134,7 @@ type Device struct {
 
 func clError(status cl.CL_int, f string) error {
 	if -status < 0 || int(-status) > len(cl.ERROR_CODES_STRINGS) {
-		return fmt.Errorf("%s returned unknown error!")
+		return fmt.Errorf("returned unknown error")
 	}
 
 	return fmt.Errorf("%s returned error %s (%d)", f,
@@ -541,9 +541,9 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 			"minimum target %032x", d.index, hash, d.work.Target.Bytes())
 		d.invalidShares++
 		return
-	} else {
-		d.allDiffOneShares++
 	}
+
+	d.allDiffOneShares++
 
 	if !cfg.Benchmark {
 		// Assess versus the pool or daemon target.
