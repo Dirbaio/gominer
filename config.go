@@ -33,10 +33,9 @@ var (
 	defaultLogDir        = filepath.Join(minerHomeDir, defaultLogDirname)
 	defaultAutocalibrate = 500
 
-	// Took these values from cgminer.
 	minIntensity = 8
 	maxIntensity = 31
-	maxWorkSize  = 0xFFFFFFFF
+	maxWorkSize  = uint32(0xFFFFFFFF - 255)
 )
 
 type config struct {
@@ -77,7 +76,7 @@ type config struct {
 	Intensity         string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device. Single global value or a comma separated list."`
 	IntensityInts     []int
 	WorkSize          string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity). Single global value or a comma separated list."`
-	WorkSizeInts      []int
+	WorkSizeInts      []uint32
 
 	// Pool related options
 	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port)"`
@@ -426,7 +425,7 @@ func loadConfig() (*config, []string, error) {
 		// Parse a list like -W 536870912,1073741824
 		if strings.Contains(cfg.WorkSize, ",") {
 			specifiedWorkSizes := strings.Split(cfg.WorkSize, ",")
-			cfg.WorkSizeInts = make([]int, len(specifiedWorkSizes))
+			cfg.WorkSizeInts = make([]uint32, len(specifiedWorkSizes))
 			for i := range specifiedWorkSizes {
 				j, err := strconv.Atoi(specifiedWorkSizes[i])
 				if err != nil {
@@ -437,11 +436,11 @@ func loadConfig() (*config, []string, error) {
 					return nil, nil, err
 				}
 
-				cfg.WorkSizeInts[i] = j
+				cfg.WorkSizeInts[i] = uint32(j)
 			}
 			// Use specified worksize like -W 1073741824
 		} else {
-			cfg.WorkSizeInts = make([]int, 1)
+			cfg.WorkSizeInts = make([]uint32, 1)
 			i, err := strconv.Atoi(cfg.WorkSize)
 			if err != nil {
 				err := fmt.Errorf("Could not convert worksize %v "+
@@ -450,13 +449,13 @@ func loadConfig() (*config, []string, error) {
 				return nil, nil, err
 			}
 
-			cfg.WorkSizeInts[0] = i
+			cfg.WorkSizeInts[0] = uint32(i)
 		}
 	}
 
 	for i := range cfg.WorkSizeInts {
-		if cfg.WorkSizeInts[i] < 0 {
-			err := fmt.Errorf("Zero or negative WorkSize passed: %v",
+		if cfg.WorkSizeInts[i] < 256 {
+			err := fmt.Errorf("Too small WorkSize passed: %v, min 256",
 				cfg.WorkSizeInts[i])
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
