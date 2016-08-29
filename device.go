@@ -52,7 +52,7 @@ func getCLPlatforms() ([]cl.CL_platform_id, error) {
 // getCLDevices returns the list of devices for the given platform.
 func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
 	var numDevices cl.CL_uint
-	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil,
+	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, 0, nil,
 		&numDevices)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLGetDeviceIDs")
@@ -141,7 +141,7 @@ func clError(status cl.CL_int, f string) error {
 		cl.ERROR_CODES_STRINGS[-status], status)
 }
 
-// ListDevices prints a list of GPUs present.
+// ListDevices prints a list of devices present.
 func ListDevices() {
 	platformIDs, err := getCLPlatforms()
 	if err != nil {
@@ -149,15 +149,19 @@ func ListDevices() {
 		os.Exit(1)
 	}
 
-	platformID := platformIDs[0]
-	deviceIDs, err := getCLDevices(platformID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Could not get CL devices for platform: %v\n", err)
-		os.Exit(1)
-	}
+	deviceListIndex := 0
+	for i := range platformIDs {
+		platformID := platformIDs[i]
+		deviceIDs, err := getCLDevices(platformID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not get CL devices for platform: %v\n", err)
+			os.Exit(1)
+		}
 
-	for i, deviceID := range deviceIDs {
-		fmt.Printf("GPU #%d: %s\n", i, getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"))
+		for _, deviceID := range deviceIDs {
+			fmt.Printf("DEV #%d: %s\n", deviceListIndex, getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"))
+			deviceListIndex++
+		}
 	}
 }
 
@@ -300,7 +304,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 	}
 
 	intensity := math.Log2(float64(globalWorkSize))
-	minrLog.Infof("GPU #%d: Work size set to %v ('intensity' %v)",
+	minrLog.Infof("DEV #%d: Work size set to %v ('intensity' %v)",
 		d.index, globalWorkSize, intensity)
 	d.workSize = globalWorkSize
 
@@ -406,11 +410,11 @@ func (d *Device) testFoundCandidate() {
 }
 
 func (d *Device) runDevice() error {
-	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
+	minrLog.Infof("Started DEV #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
 
 	// Bump the extraNonce for the device it's running on
-	// when you begin mining. This ensures each GPU is doing
+	// when you begin mining. This ensures each device is doing
 	// different work. If the extraNonce has already been
 	// set for valid work, restore that.
 	d.extraNonce += uint32(d.index) << 24
@@ -502,7 +506,7 @@ func (d *Device) runDevice() error {
 		}
 
 		for i := uint32(0); i < outputData[0]; i++ {
-			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
+			minrLog.Debugf("DEV #%d: Found candidate %v nonce %08x, "+
 				"extraNonce %08x, workID %08x, timestamp %08x",
 				d.index, i+1, outputData[i+1], d.lastBlock[work.Nonce1Word],
 				util.Uint32EndiannessSwap(d.currentWorkID),
@@ -516,7 +520,7 @@ func (d *Device) runDevice() error {
 		}
 
 		elapsedTime := time.Since(currentTime)
-		minrLog.Tracef("GPU #%d: Kernel execution to read time: %v", d.index,
+		minrLog.Tracef("DEV #%d: Kernel execution to read time: %v", d.index,
 			elapsedTime)
 	}
 }
@@ -537,7 +541,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	// work check are considered to be hardware errors.
 	hashNum := blockchain.ShaHashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
-		minrLog.Errorf("GPU #%d: Hardware error found, hash %v above "+
+		minrLog.Errorf("DEV #%d: Hardware error found, hash %v above "+
 			"minimum target %032x", d.index, hash, d.work.Target.Bytes())
 		d.invalidShares++
 		return
@@ -548,10 +552,10 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	if !cfg.Benchmark {
 		// Assess versus the pool or daemon target.
 		if hashNum.Cmp(d.work.Target) > 0 {
-			minrLog.Debugf("GPU #%d: Hash %v bigger than target %032x (boo)",
+			minrLog.Debugf("DEV #%d: Hash %v bigger than target %032x (boo)",
 				d.index, hash, d.work.Target.Bytes())
 		} else {
-			minrLog.Infof("GPU #%d: Found hash with work below target! %v (yay)",
+			minrLog.Infof("DEV #%d: Found hash with work below target! %v (yay)",
 				d.index, hash)
 			d.validShares++
 			d.workDone <- data
@@ -604,7 +608,7 @@ func (d *Device) PrintStats() {
 		float64(d.allDiffOneShares)) /
 		float64(secondsElapsed)
 
-	minrLog.Infof("GPU #%d (%s) reporting average hash rate %v, %v/%v valid work",
+	minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work",
 		d.index,
 		d.deviceName,
 		util.FormatHashRate(averageHashRate),

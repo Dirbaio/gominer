@@ -16,7 +16,7 @@ func (d *Device) getKernelExecutionTime(globalWorksize uint32) (time.Duration,
 	error) {
 	d.work = work.Work{}
 
-	minrLog.Tracef("Started GPU #%d: %s for kernel execution time fetch",
+	minrLog.Tracef("Started DEV #%d: %s for kernel execution time fetch",
 		d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
 
@@ -85,14 +85,14 @@ func (d *Device) getKernelExecutionTime(globalWorksize uint32) (time.Duration,
 	}
 
 	elapsedTime := time.Since(currentTime)
-	minrLog.Tracef("GPU #%d: Kernel execution to read time for work "+
+	minrLog.Tracef("DEV #%d: Kernel execution to read time for work "+
 		"size calibration: %v", d.index, elapsedTime)
 
 	return elapsedTime, nil
 }
 
 // calcWorkSizeForMilliseconds calculates the correct worksize to achieve
-// a GPU execution cycle of the passed duration in milliseconds.
+// a device execution cycle of the passed duration in milliseconds.
 func (d *Device) calcWorkSizeForMilliseconds(ms int) (uint32, error) {
 	workSize := uint32(1 << 10)
 	timeToAchieve := time.Duration(ms) * time.Millisecond

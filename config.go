@@ -69,7 +69,7 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
-	Autocalibrate     string `short:"A" long:"autocalibrate" description:"GPU kernel execution target time in milliseconds. Single global value or a comma separated list."`
+	Autocalibrate     string `short:"A" long:"autocalibrate" description:"Time target in milliseconds to spend executing hashes on the device during each iteration. Single global value or a comma separated list."`
 	AutocalibrateInts []int
 	Devices           string `short:"D" long:"devices" description:"Single device ID or a comma separated list of device IDs to use."`
 	DeviceIDs         []int

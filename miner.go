@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/gominer/cl"
 	"github.com/decred/gominer/stratum"
 	"github.com/decred/gominer/work"
 )
@@ -34,6 +33,8 @@ func NewMiner() (*Miner, error) {
 		needsWorkRefresh: make(chan struct{}),
 	}
 
+	m.devices = make([]*Device, 0)
+
 	// If needed, start pool code.
 	if cfg.Pool != "" && !cfg.Benchmark {
 		s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword, cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version())
@@ -47,47 +48,45 @@ func NewMiner() (*Miner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
 	}
-	platformID := platformIDs[0]
-	CLdeviceIDs, err := getCLDevices(platformID)
-	if err != nil {
-		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
-	}
 
-	var deviceIDs []cl.CL_device_id
+	deviceListIndex := 0
+	deviceListEnabledCount := 0
 
-	// Enforce device restrictions if they exist
-	if len(cfg.DeviceIDs) > 0 {
-		for _, i := range cfg.DeviceIDs {
-			var found = false
-			for j, CLdeviceID := range CLdeviceIDs {
-				if i == j {
-					deviceIDs = append(deviceIDs, CLdeviceID)
-					found = true
+	for p := range platformIDs {
+		platformID := platformIDs[p]
+		CLdeviceIDs, err := getCLDevices(platformID)
+		if err != nil {
+			return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+		}
+
+		for _, CLdeviceID := range CLdeviceIDs {
+			miningAllowed := false
+
+			// Enforce device restrictions if they exist
+			if len(cfg.DeviceIDs) > 0 {
+				for _, i := range cfg.DeviceIDs {
+					if deviceListIndex == i {
+						miningAllowed = true
+					}
+				}
+			} else {
+				miningAllowed = true
+			}
+
+			if miningAllowed {
+				newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, m.workDone)
+				deviceListEnabledCount++
+				m.devices = append(m.devices, newDevice)
+				if err != nil {
+					return nil, err
 				}
 			}
-			if !found {
-				return nil, fmt.Errorf("Unable to find GPU #%d", i)
-			}
+			deviceListIndex++
 		}
-	} else {
-		deviceIDs = CLdeviceIDs
 	}
 
-	m.devices = make([]*Device, len(deviceIDs))
-	for i, deviceID := range deviceIDs {
-		// Use the real device order so i.e. -D 1 doesn't print GPU #0
-		realnum := i
-		for iCL, CLdeviceID := range CLdeviceIDs {
-			if CLdeviceID == deviceID {
-				realnum = iCL
-			}
-		}
-
-		var err error
-		m.devices[i], err = NewDevice(realnum, i, platformID, deviceID, m.workDone)
-		if err != nil {
-			return nil, err
-		}
+	if deviceListEnabledCount == 0 {
+		return nil, fmt.Errorf("No devices started")
 	}
 
 	m.started = uint32(time.Now().Unix())
