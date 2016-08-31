@@ -13,17 +13,18 @@ import (
 )
 
 type Miner struct {
+	// The following variables must only be used atomically.
+	validShares   uint64
+	staleShares   uint64
+	invalidShares uint64
+
+	started          uint32
 	devices          []*Device
 	workDone         chan []byte
 	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
 	pool             *stratum.Stratum
-
-	started       uint32
-	validShares   uint64
-	staleShares   uint64
-	invalidShares uint64
 }
 
 func NewMiner() (*Miner, error) {
@@ -106,23 +107,15 @@ func (m *Miner) workSubmitThread() {
 			if m.pool == nil {
 				accepted, err := GetWorkSubmit(data)
 				if err != nil {
-					inval := atomic.LoadUint64(&m.invalidShares)
-					inval++
-					atomic.StoreUint64(&m.invalidShares, inval)
-
+					atomic.AddUint64(&m.invalidShares, 1)
 					minrLog.Errorf("Error submitting work: %v", err)
 				} else {
 					if accepted {
-						val := atomic.LoadUint64(&m.validShares)
-						val++
-						atomic.StoreUint64(&m.validShares, val)
-
+						atomic.AddUint64(&m.validShares, 1)
 						minrLog.Debugf("Submitted work successfully: %v",
 							accepted)
 					} else {
-						inval := atomic.LoadUint64(&m.invalidShares)
-						inval++
-						atomic.StoreUint64(&m.invalidShares, inval)
+						atomic.AddUint64(&m.invalidShares, 1)
 					}
 
 					m.needsWorkRefresh <- struct{}{}
@@ -132,17 +125,11 @@ func (m *Miner) workSubmitThread() {
 				if err != nil {
 					switch err {
 					case stratum.ErrStratumStaleWork:
-						stale := atomic.LoadUint64(&m.staleShares)
-						stale++
-						atomic.StoreUint64(&m.staleShares, stale)
-
+						atomic.AddUint64(&m.staleShares, 1)
 						minrLog.Debugf("Share submitted to pool was stale")
 
 					default:
-						inval := atomic.LoadUint64(&m.invalidShares)
-						inval++
-						atomic.StoreUint64(&m.invalidShares, inval)
-
+						atomic.AddUint64(&m.invalidShares, 1)
 						minrLog.Errorf("Error submitting work to pool: %v", err)
 					}
 				} else {

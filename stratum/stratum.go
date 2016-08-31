@@ -41,22 +41,23 @@ var ErrStratumStaleWork = fmt.Errorf("Stale work, throwing away")
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
 type Stratum struct {
-	sync.Mutex
-	cfg           Config
-	Conn          net.Conn
-	Reader        *bufio.Reader
-	ID            uint64
-	authID        uint64
-	subID         uint64
-	submitID      uint64
-	Diff          float64
-	Target        *big.Int
-	Submitted     bool
-	PoolWork      NotifyWork
-	latestJobTime uint32
-
+	// The following variables must only be used atomically.
 	ValidShares   uint64
 	InvalidShares uint64
+	latestJobTime uint32
+
+	sync.Mutex
+	cfg       Config
+	Conn      net.Conn
+	Reader    *bufio.Reader
+	ID        uint64
+	authID    uint64
+	subID     uint64
+	submitID  uint64
+	Diff      float64
+	Target    *big.Int
+	Submitted bool
+	PoolWork  NotifyWork
 }
 
 // Config holdes the config options that may be used by a stratum pool.
@@ -309,15 +310,10 @@ func (s *Stratum) handleBasicReply(resp interface{}) {
 	}
 	if aResp.ID == s.submitID {
 		if aResp.Result {
-			val := atomic.LoadUint64(&s.ValidShares)
-			val++
-			atomic.StoreUint64(&s.ValidShares, val)
+			atomic.AddUint64(&s.ValidShares, 1)
 			log.Debug("Share accepted")
 		} else {
-			inval := atomic.LoadUint64(&s.InvalidShares)
-			inval++
-			atomic.StoreUint64(&s.InvalidShares, inval)
-
+			atomic.AddUint64(&s.InvalidShares, 1)
 			log.Error("Share rejected: ", aResp.Error.ErrStr)
 		}
 		s.Submitted = false
