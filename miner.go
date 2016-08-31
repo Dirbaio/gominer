@@ -255,6 +255,5 @@ func (m *Miner) Stop() {
 	close(m.quit)
 	for _, d := range m.devices {
 		d.Stop()
-		m.wg.Done()
 	}
 }
