@@ -542,7 +542,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	hashNum := blockchain.ShaHashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
 		minrLog.Errorf("DEV #%d: Hardware error found, hash %v above "+
-			"minimum target %032x", d.index, hash, d.work.Target.Bytes())
+			"minimum target %064x", d.index, hash, d.work.Target.Bytes())
 		d.invalidShares++
 		return
 	}
