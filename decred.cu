@@ -170,17 +170,9 @@ __global__ void decred_gpu_hash_nonce(const uint32_t threads, const uint32_t sta
 		pxorx1GS2( 0, 4, 8, 12, 1, 5, 9, 13); pxorGS2(   2, 6, 10, 14, 3, 7, 11, 15); pxorGS2(   0, 5, 10, 15, 1, 6, 11, 12); pxorGS(    2, 7, 8, 13);
 
 		if ((c_h[1]^v[15]) == v[7]) {
-			v[ 3] += c_xors[i++] + v[4];
-			v[14] = ROL16(v[14] ^ v[3]);
-			v[ 9] += v[14];
-			v[ 4] = ROTR32(v[4] ^ v[9], 12);
-			v[ 3] += c_xors[i++] + v[4];
-			v[14] = ROR8(v[14] ^ v[3]);
-			if(cuda_swab32((c_h[0]^v[6]^v[14])) <= highTarget) {
-				uint32_t pos = atomicInc(&resNonce[0], UINT32_MAX)+1;
-				resNonce[pos] = nonce;
-				return;
-			}
+		        uint32_t pos = atomicInc(&resNonce[0], UINT32_MAX)+1;
+			resNonce[pos] = nonce;
+			return;
 		}
 	}
 }
