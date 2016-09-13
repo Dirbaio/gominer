@@ -1,4 +1,3 @@
-
 package cl
 
 /*
@@ -14,7 +13,7 @@ package cl
 #else
 #include "CL/opencl.h"
 #endif
- */
+*/
 import "C"
 import "unsafe"
 
