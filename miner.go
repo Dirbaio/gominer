@@ -122,8 +122,8 @@ func NewMiner() (*Miner, error) {
 					if err != nil {
 						return nil, err
 					}
-					deviceListIndex++
 				}
+				deviceListIndex++
 			}
 
 			if deviceListEnabledCount == 0 {
