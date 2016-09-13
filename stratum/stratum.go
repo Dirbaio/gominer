@@ -114,6 +114,7 @@ type StratumRsp struct {
 type StratErr struct {
 	ErrNum uint64
 	ErrStr string
+	Result *json.RawMessage `json:"result,omitempty"`
 }
 
 // Basic reply is a reply type for any of the simple messages.
