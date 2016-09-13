@@ -7,11 +7,10 @@ extern "C" {
 
 //#include <ccminer-config.h>
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <inttypes.h>
-#include <sys/time.h>
-#include <pthread.h>
-#include <curl/curl.h>
 
 #ifdef _MSC_VER
 #undef HAVE_ALLOCA_H
@@ -296,12 +295,6 @@ struct cgpu_info {
 	uint32_t throughput;
 };
 
-struct thr_api {
-	int id;
-	pthread_t pth;
-	struct thread_q	*q;
-};
-
 struct stats_data {
 	uint32_t uid;
 	uint32_t tm_stat;
@@ -339,12 +332,6 @@ struct hashlog_data {
 
 /* end of api */
 
-struct thr_info {
-	int		id;
-	pthread_t	pth;
-	struct thread_q	*q;
-	struct cgpu_info gpu;
-};
 
 struct work_restart {
 	/* volatile to modify accross threads (vstudio thing) */
@@ -385,7 +372,6 @@ extern long opt_proxy_type;
 extern bool use_syslog;
 extern bool use_colors;
 extern int use_pok;
-extern pthread_mutex_t applog_lock;
 extern struct thr_info *thr_info;
 extern int longpoll_thr_id;
 extern int stratum_thr_id;
@@ -505,33 +491,6 @@ struct stratum_job {
 	double diff;
 };
 
-struct stratum_ctx {
-	char *url;
-
-	CURL *curl;
-	char *curl_url;
-	char curl_err_str[CURL_ERROR_SIZE];
-	curl_socket_t sock;
-	size_t sockbuf_size;
-	char *sockbuf;
-
-	double next_diff;
-	double sharediff;
-
-	char *session_id;
-	size_t xnonce1_size;
-	unsigned char *xnonce1;
-	size_t xnonce2_size;
-	struct stratum_job job;
-
-	struct timeval tv_submit;
-	uint32_t answer_msec;
-	int pooln;
-	time_t tm_connected;
-
-	int srvtime_diff;
-};
-
 #define POK_MAX_TXS   4
 #define POK_MAX_TX_SZ 16384U
 struct tx {
@@ -600,7 +559,6 @@ struct pool_infos {
 	int time_limit;
 	int scantime;
 	// connection
-	struct stratum_ctx stratum;
 	uint8_t allow_gbt;
 	uint8_t allow_mininginfo;
 	uint16_t check_dups; // 16_t for align
