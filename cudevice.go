@@ -46,7 +46,6 @@ func getCUInfo() ([]cu.Device, error) {
 	ids := cu.DeviceGetCount()
 	minrLog.Infof("%v GPUs", ids)
 	var CUdevices []cu.Device
-	// XXX Do this more like ListCuDevices
 	for i := 0; i < ids; i++ {
 		dev := cu.DeviceGet(i)
 		CUdevices = append(CUdevices, dev)
@@ -140,7 +139,7 @@ func (d *Device) runCuDevice() error {
 	// Allocate the input region
 	d.cuContext.SetCurrent()
 
-	// kernel is built with nvcc, not an api call so much bet done
+	// kernel is built with nvcc, not an api call so must be done
 	// at compile time.
 
 	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
@@ -197,19 +196,14 @@ func (d *Device) runCuDevice() error {
 		// Execute the kernel and follow its execution time.
 		currentTime := time.Now()
 
-		// TODO Which nonceword is this?  In ccminer it is &pdata[35]
 		startNonce := d.lastBlock[work.Nonce1Word]
-		//fmt.Printf("%p %v\n", &startNonce, startNonce)
 
-		throughput := uint32(0x20000000) // TODO
-		//throughput = minUint32(throughput, ^uint32(0)-nonce)
-		//gridx := int((throughput + threadsPerBlock - 1) / threadsPerBlock)
-		//gridx := (int(throughput) + 639) / 640
+		throughput := uint32(0x20000000)
 		gridx := ((throughput - 1) / 640)
 
-		gridx = 52428 // don't ask me why this works.
+		gridx = 52428 // like ccminer
 
-		targetHigh := ^uint32(0) // TODO
+		targetHigh := ^uint32(0)
 
 		decredHashNonce(gridx, blockx, throughput, startNonce, nonceResultsD, targetHigh)
 
