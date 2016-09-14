@@ -14,11 +14,13 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
 	"github.com/mumax/3/cuda/cu"
 
+	"github.com/decred/gominer/nvml"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
@@ -39,6 +41,39 @@ func decredCPUSetBlock52(input *[192]byte) {
 func decredHashNonce(gridx, blockx, threads uint32, startNonce uint32, nonceResults cu.DevicePtr, targetHigh uint32) {
 	C.decred_hash_nonce(C.uint32_t(gridx), C.uint32_t(blockx), C.uint32_t(threads),
 		C.uint32_t(startNonce), (*C.uint32_t)(unsafe.Pointer(nonceResults)), C.uint32_t(targetHigh))
+}
+
+func deviceInfoNVIDIA(index int) (uint32, uint32) {
+	fanPercent := uint32(0)
+	temperature := uint32(0)
+
+	err := nvml.Init()
+	if err != nil {
+		minrLog.Errorf("NVML Init error: %v", err)
+		return fanPercent, temperature
+	}
+
+	dh, err := nvml.DeviceGetHandleByIndex(index)
+	if err != nil {
+		minrLog.Errorf("NVML DeviceGetHandleByIndex error: %v", err)
+		return fanPercent, temperature
+	}
+
+	nvmlFanSpeed, err := nvml.DeviceFanSpeed(dh)
+	if err != nil {
+		minrLog.Infof("NVML DeviceFanSpeed error: %v", err)
+	} else {
+		fanPercent = uint32(nvmlFanSpeed)
+	}
+
+	nvmlTemp, err := nvml.DeviceTemperature(dh)
+	if err != nil {
+		minrLog.Infof("NVML DeviceTemperature error: %v", err)
+	} else {
+		temperature = uint32(nvmlTemp)
+	}
+
+	return fanPercent, temperature
 }
 
 func getCUInfo() ([]cu.Device, error) {
@@ -68,7 +103,7 @@ func getCUDevices() ([]cu.Device, error) {
 	minMinor := 5
 
 	if maj < minMajor || (maj == minMajor && min < minMinor) {
-		return nil, fmt.Errorf("Driver does not suppoer CUDA %v.%v API", minMajor, minMinor)
+		return nil, fmt.Errorf("Driver does not support CUDA %v.%v API", minMajor, minMinor)
 	}
 
 	var numDevices int
@@ -103,23 +138,34 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 	workDone chan []byte) (*Device, error) {
 
 	d := &Device{
-		index:      index,
-		cuDeviceID: deviceID,
-		deviceName: deviceID.Name(),
-		cuda:       true,
-		quit:       make(chan struct{}),
-		newWork:    make(chan *work.Work, 5),
-		workDone:   workDone,
+		index:       index,
+		cuDeviceID:  deviceID,
+		deviceName:  deviceID.Name(),
+		cuda:        true,
+		kind:        "nvidia",
+		quit:        make(chan struct{}),
+		newWork:     make(chan *work.Work, 5),
+		workDone:    workDone,
+		fanPercent:  0,
+		temperature: 0,
 	}
 
 	d.cuInSize = 21
+
+	fanPercent, temperature := deviceInfoNVIDIA(d.index)
+	// Newer cards will idle with the fan off so just check if we got
+	// a good temperature reading
+	if temperature != 0 {
+		atomic.StoreUint32(&d.fanPercent, fanPercent)
+		atomic.StoreUint32(&d.temperature, temperature)
+		d.fanTempActive = true
+	}
 
 	d.started = uint32(time.Now().Unix())
 
 	// Autocalibrate?
 
 	return d, nil
-
 }
 
 func (d *Device) runCuDevice() error {

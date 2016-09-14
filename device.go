@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -66,19 +67,25 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 }
 
 type Device struct {
+	// The following variables must only be used atomically.
+	fanPercent  uint32
+	temperature uint32
+
 	sync.Mutex
 	index int
 	cuda  bool
 
 	// Items for OpenCL device
-	platformID   cl.CL_platform_id
-	deviceID     cl.CL_device_id
-	deviceName   string
-	context      cl.CL_context
-	queue        cl.CL_command_queue
-	outputBuffer cl.CL_mem
-	program      cl.CL_program
-	kernel       cl.CL_kernel
+	platformID    cl.CL_platform_id
+	deviceID      cl.CL_device_id
+	deviceName    string
+	context       cl.CL_context
+	queue         cl.CL_command_queue
+	outputBuffer  cl.CL_mem
+	program       cl.CL_program
+	kernel        cl.CL_kernel
+	fanTempActive bool
+	kind          string
 
 	// Items for CUDA device
 	cuDeviceID cu.Device
@@ -311,10 +318,38 @@ func (d *Device) PrintStats() {
 		float64(d.allDiffOneShares)) /
 		float64(secondsElapsed)
 
-	minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work",
-		d.index,
-		d.deviceName,
-		util.FormatHashRate(averageHashRate),
-		d.validShares,
-		d.validShares+d.invalidShares)
+	fanPercent := atomic.LoadUint32(&d.fanPercent)
+	temperature := atomic.LoadUint32(&d.temperature)
+
+	if fanPercent != 0 || temperature != 0 {
+		minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work, Fan=%v%% Temp=%vC",
+			d.index,
+			d.deviceName,
+			util.FormatHashRate(averageHashRate),
+			d.validShares,
+			d.validShares+d.invalidShares,
+			fanPercent,
+			temperature)
+	} else {
+		minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work",
+			d.index,
+			d.deviceName,
+			util.FormatHashRate(averageHashRate),
+			d.validShares,
+			d.validShares+d.invalidShares)
+	}
+}
+
+// UpdateFanTemp updates a device's statistics
+func (d *Device) UpdateFanTemp() {
+	d.Lock()
+	defer d.Unlock()
+	if d.fanTempActive {
+		switch d.kind {
+		case "nvidia":
+			fanPercent, temperature := deviceInfoNVIDIA(d.index)
+			atomic.StoreUint32(&d.fanPercent, fanPercent)
+			atomic.StoreUint32(&d.temperature, temperature)
+		}
+	}
 }

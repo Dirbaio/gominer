@@ -249,6 +249,7 @@ func (m *Miner) printStatsThread() {
 			}
 		}
 		for _, d := range m.devices {
+			d.UpdateFanTemp()
 			d.PrintStats()
 		}
 
