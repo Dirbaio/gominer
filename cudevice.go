@@ -231,8 +231,6 @@ func (d *Device) runCuDevice() error {
 		minrLog.Tracef("GPU #%d: Kernel execution to read time: %v", d.index,
 			elapsedTime)
 	}
-
-	return nil
 }
 
 func minUint32(a, b uint32) uint32 {
