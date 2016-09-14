@@ -253,7 +253,7 @@ func (d *Device) runCuDevice() error {
 
 		decredHashNonce(gridx, blockx, throughput, startNonce, nonceResultsD, targetHigh)
 
-		cu.MemcpyDtoH(nonceResultsH, nonceResultsD, d.cuInSize*4)
+		cu.MemcpyDtoH(nonceResultsH, nonceResultsD, d.cuInSize)
 
 		numResults := nonceResultsHSlice[0]
 		for i, result := range nonceResultsHSlice[1 : 1+numResults] {
