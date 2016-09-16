@@ -346,10 +346,16 @@ func (d *Device) UpdateFanTemp() {
 	defer d.Unlock()
 	if d.fanTempActive {
 		switch d.kind {
+		case "amdgpu":
+			fanPercent, temperature := deviceInfoAMDGPU(d.index)
+			atomic.StoreUint32(&d.fanPercent, fanPercent)
+			atomic.StoreUint32(&d.temperature, temperature)
+			break
 		case "nvidia":
 			fanPercent, temperature := deviceInfoNVIDIA(d.index)
 			atomic.StoreUint32(&d.fanPercent, fanPercent)
 			atomic.StoreUint32(&d.temperature, temperature)
+			break
 		}
 	}
 }
