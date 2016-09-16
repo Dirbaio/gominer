@@ -18,7 +18,7 @@ obj/cuda.a: obj/blake.o obj/decred.o
 	$(AR) rvs obj/cuda.a obj/blake.o obj/decred.o
 
 build: obj/cuda.a
-	go build
+	go build -tags 'cuda'
 
 install: obj/cuda.a
 	go install

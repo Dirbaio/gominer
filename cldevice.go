@@ -1,16 +1,21 @@
 // Copyright (c) 2016 The Decred developers.
 
+// +build opencl,!cuda
+
 package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -19,6 +24,107 @@ import (
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
+
+// Return the GPU library in use.
+func gpuLib() string {
+	return "OpenCL"
+}
+
+const (
+	outputBufferSize = cl.CL_size_t(64)
+	localWorksize    = 64
+	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
+)
+
+var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
+
+func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
+	var programBuffer [1][]byte
+	var programSize [1]cl.CL_size_t
+
+	// Read each program file and place content into buffer array.
+	programHandle, err := os.Open(filename)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer programHandle.Close()
+
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, programHandle)
+	if err != nil {
+		return nil, nil, err
+	}
+	str := string(buf.Bytes())
+	programFinal := []byte(str)
+
+	programSize[0] = cl.CL_size_t(len(programFinal))
+	programBuffer[0] = make([]byte, programSize[0])
+	for i := range programFinal {
+		programBuffer[0][i] = programFinal[i]
+	}
+
+	return programBuffer[:], programSize[:], nil
+}
+
+func clError(status cl.CL_int, f string) error {
+	if -status < 0 || int(-status) > len(cl.ERROR_CODES_STRINGS) {
+		return fmt.Errorf("returned unknown error")
+	}
+
+	return fmt.Errorf("%s returned error %s (%d)", f,
+		cl.ERROR_CODES_STRINGS[-status], status)
+}
+
+type Device struct {
+	// The following variables must only be used atomically.
+	fanPercent  uint32
+	temperature uint32
+
+	sync.Mutex
+	index int
+	cuda  bool
+
+	// Items for OpenCL device
+	platformID    cl.CL_platform_id
+	deviceID      cl.CL_device_id
+	deviceName    string
+	context       cl.CL_context
+	queue         cl.CL_command_queue
+	outputBuffer  cl.CL_mem
+	program       cl.CL_program
+	kernel        cl.CL_kernel
+	fanTempActive bool
+	kind          string
+
+	//cuInput        cu.DevicePtr
+	cuInSize       int64
+	cuOutputBuffer []float64
+
+	workSize uint32
+
+	// extraNonce is the device extraNonce, where the first
+	// byte is the device ID (supporting up to 255 devices)
+	// while the last 3 bytes is the extraNonce value. If
+	// the extraNonce goes through all 0x??FFFFFF values,
+	// it will reset to 0x??000000.
+	extraNonce    uint32
+	currentWorkID uint32
+
+	midstate  [8]uint32
+	lastBlock [16]uint32
+
+	work     work.Work
+	newWork  chan *work.Work
+	workDone chan []byte
+	hasWork  bool
+
+	started          uint32
+	allDiffOneShares uint64
+	validShares      uint64
+	invalidShares    uint64
+
+	quit chan struct{}
+}
 
 // If the device order and OpenCL index are ever not the same then we can
 // implement topology finding code:
@@ -41,7 +147,7 @@ func determineDeviceKind(index int, deviceName string) string {
 	return deviceKind
 }
 
-func deviceInfoAMDGPU(index int) (uint32, uint32) {
+func deviceInfo(index int) (uint32, uint32) {
 	basePath := "/sys/class/drm/card_I_/device/hwmon/"
 	basePath = strings.Replace(basePath, "_I_", strconv.Itoa(index), 1)
 	fanPercent := uint32(0)
@@ -330,7 +436,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 
 	switch d.kind {
 	case "amdgpu":
-		fanPercent, temperature := deviceInfoAMDGPU(d.index)
+		fanPercent, temperature := deviceInfo(d.index)
 		// Newer cards will idle with the fan off so just check if we got
 		// a good temperature reading
 		if temperature != 0 {
@@ -458,4 +564,80 @@ func (d *Device) runDevice() error {
 		minrLog.Tracef("DEV #%d: Kernel execution to read time: %v", d.index,
 			elapsedTime)
 	}
+}
+
+func newMinerDevs(m *Miner) (*Miner, int, error) {
+	deviceListIndex := 0
+	deviceListEnabledCount := 0
+
+	platformIDs, err := getCLPlatforms()
+	if err != nil {
+		return nil, 0, fmt.Errorf("Could not get CL platforms: %v", err)
+	}
+
+	for p := range platformIDs {
+		platformID := platformIDs[p]
+		CLdeviceIDs, err := getCLDevices(platformID)
+		if err != nil {
+			return nil, 0, fmt.Errorf("Could not get CL devices for platform: %v", err)
+		}
+
+		for _, CLdeviceID := range CLdeviceIDs {
+			miningAllowed := false
+
+			// Enforce device restrictions if they exist
+			if len(cfg.DeviceIDs) > 0 {
+				for _, i := range cfg.DeviceIDs {
+					if deviceListIndex == i {
+						miningAllowed = true
+					}
+				}
+			} else {
+				miningAllowed = true
+			}
+			if miningAllowed {
+				newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, m.workDone)
+				deviceListEnabledCount++
+				m.devices = append(m.devices, newDevice)
+				if err != nil {
+					return nil, 0, err
+				}
+			}
+			deviceListIndex++
+		}
+	}
+	return m, deviceListEnabledCount, nil
+
+}
+
+func getDeviceInfo(id cl.CL_device_id,
+	name cl.CL_device_info,
+	str string) string {
+
+	var errNum cl.CL_int
+	var paramValueSize cl.CL_size_t
+
+	errNum = cl.CLGetDeviceInfo(id, name, 0, nil, &paramValueSize)
+
+	if errNum != cl.CL_SUCCESS {
+		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
+	}
+
+	var info interface{}
+	errNum = cl.CLGetDeviceInfo(id, name, paramValueSize, &info, nil)
+	if errNum != cl.CL_SUCCESS {
+		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
+	}
+
+	strinfo := fmt.Sprintf("%v", info)
+
+	return strinfo
+}
+
+func (d *Device) Release() {
+	cl.CLReleaseKernel(d.kernel)
+	cl.CLReleaseProgram(d.program)
+	cl.CLReleaseCommandQueue(d.queue)
+	cl.CLReleaseMemObject(d.outputBuffer)
+	cl.CLReleaseContext(d.context)
 }

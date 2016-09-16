@@ -3,145 +3,22 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
-	"io"
 	"math/big"
-	"os"
-	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
-
-	"github.com/mumax/3/cuda/cu"
 
 	"github.com/decred/dcrd/blockchain"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 
 	"github.com/decred/gominer/blake256"
-	"github.com/decred/gominer/cl"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
 
-const (
-	outputBufferSize   = cl.CL_size_t(64)
-	localWorksize      = 64
-	uint32Size         = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
-	cuOutputBufferSize = 64
-)
-
 var chainParams = &chaincfg.MainNetParams
-
-var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
-
-func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
-	var programBuffer [1][]byte
-	var programSize [1]cl.CL_size_t
-
-	// Read each program file and place content into buffer array.
-	programHandle, err := os.Open(filename)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer programHandle.Close()
-
-	buf := bytes.NewBuffer(nil)
-	_, err = io.Copy(buf, programHandle)
-	if err != nil {
-		return nil, nil, err
-	}
-	str := string(buf.Bytes())
-	programFinal := []byte(str)
-
-	programSize[0] = cl.CL_size_t(len(programFinal))
-	programBuffer[0] = make([]byte, programSize[0])
-	for i := range programFinal {
-		programBuffer[0][i] = programFinal[i]
-	}
-
-	return programBuffer[:], programSize[:], nil
-}
-
-type Device struct {
-	// The following variables must only be used atomically.
-	fanPercent  uint32
-	temperature uint32
-
-	sync.Mutex
-	index int
-	cuda  bool
-
-	// Items for OpenCL device
-	platformID    cl.CL_platform_id
-	deviceID      cl.CL_device_id
-	deviceName    string
-	context       cl.CL_context
-	queue         cl.CL_command_queue
-	outputBuffer  cl.CL_mem
-	program       cl.CL_program
-	kernel        cl.CL_kernel
-	fanTempActive bool
-	kind          string
-
-	// Items for CUDA device
-	cuDeviceID cu.Device
-	cuContext  cu.Context
-	//cuInput        cu.DevicePtr
-	cuInSize       int64
-	cuOutputBuffer []float64
-
-	workSize uint32
-
-	// extraNonce is the device extraNonce, where the first
-	// byte is the device ID (supporting up to 255 devices)
-	// while the last 3 bytes is the extraNonce value. If
-	// the extraNonce goes through all 0x??FFFFFF values,
-	// it will reset to 0x??000000.
-	extraNonce    uint32
-	currentWorkID uint32
-
-	midstate  [8]uint32
-	lastBlock [16]uint32
-
-	work     work.Work
-	newWork  chan *work.Work
-	workDone chan []byte
-	hasWork  bool
-
-	started          uint32
-	allDiffOneShares uint64
-	validShares      uint64
-	invalidShares    uint64
-
-	quit chan struct{}
-}
-
-func clError(status cl.CL_int, f string) error {
-	if -status < 0 || int(-status) > len(cl.ERROR_CODES_STRINGS) {
-		return fmt.Errorf("returned unknown error")
-	}
-
-	return fmt.Errorf("%s returned error %s (%d)", f,
-		cl.ERROR_CODES_STRINGS[-status], status)
-}
-
-func (d *Device) Release() {
-	if d.cuda {
-		d.cuContext.SetCurrent()
-		//d.cuInput.Free()
-		cu.CtxDestroy(&d.cuContext)
-	} else {
-		cl.CLReleaseKernel(d.kernel)
-		cl.CLReleaseProgram(d.program)
-		cl.CLReleaseCommandQueue(d.queue)
-		cl.CLReleaseMemObject(d.outputBuffer)
-		cl.CLReleaseContext(d.context)
-	}
-}
 
 func (d *Device) updateCurrentWork() {
 	var w *work.Work
@@ -191,12 +68,7 @@ func (d *Device) updateCurrentWork() {
 }
 
 func (d *Device) Run() {
-	var err error
-	if d.cuda {
-		err = d.runCuDevice()
-	} else {
-		err = d.runDevice()
-	}
+	err := d.runDevice()
 	if err != nil {
 		minrLog.Errorf("Error on device: %v", err)
 	}
@@ -281,30 +153,6 @@ func (d *Device) SetWork(w *work.Work) {
 	d.newWork <- w
 }
 
-func getDeviceInfo(id cl.CL_device_id,
-	name cl.CL_device_info,
-	str string) string {
-
-	var errNum cl.CL_int
-	var paramValueSize cl.CL_size_t
-
-	errNum = cl.CLGetDeviceInfo(id, name, 0, nil, &paramValueSize)
-
-	if errNum != cl.CL_SUCCESS {
-		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
-	}
-
-	var info interface{}
-	errNum = cl.CLGetDeviceInfo(id, name, paramValueSize, &info, nil)
-	if errNum != cl.CL_SUCCESS {
-		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
-	}
-
-	strinfo := fmt.Sprintf("%v", info)
-
-	return strinfo
-}
-
 func (d *Device) PrintStats() {
 	secondsElapsed := uint32(time.Now().Unix()) - d.started
 	if secondsElapsed == 0 {
@@ -345,14 +193,12 @@ func (d *Device) UpdateFanTemp() {
 	d.Lock()
 	defer d.Unlock()
 	if d.fanTempActive {
+		// For now amd and nvidia do more or less the same thing
+		// but could be split up later.  Anything else (Intel) just
+		// don't do anything.
 		switch d.kind {
-		case "amdgpu":
-			fanPercent, temperature := deviceInfoAMDGPU(d.index)
-			atomic.StoreUint32(&d.fanPercent, fanPercent)
-			atomic.StoreUint32(&d.temperature, temperature)
-			break
-		case "nvidia":
-			fanPercent, temperature := deviceInfoNVIDIA(d.index)
+		case "amdgpu", "nvidia":
+			fanPercent, temperature := deviceInfo(d.index)
 			atomic.StoreUint32(&d.fanPercent, fanPercent)
 			atomic.StoreUint32(&d.temperature, temperature)
 			break

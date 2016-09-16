@@ -39,9 +39,8 @@ var (
 )
 
 type config struct {
-	ListDevices   bool `short:"l" long:"listdevices" description:"List number of devices."`
-	ListCuDevices bool `long:"listcudadevices" description:"List number of CUDA devices."`
-	ShowVersion   bool `short:"V" long:"version" description:"Display version information and exit"`
+	ListDevices bool `short:"l" long:"listdevices" description:"List number of devices."`
+	ShowVersion bool `short:"V" long:"version" description:"Display version information and exit"`
 
 	// Config / log options
 	ConfigFile string `short:"C" long:"configfile" description:"Path to configuration file"`
@@ -70,7 +69,6 @@ type config struct {
 	SimNet        bool `long:"simnet" description:"Connect to the simulation test network"`
 	TLSSkipVerify bool `long:"skipverify" description:"Do not verify tls certificates (not recommended!)"`
 
-	UseCuda           bool   `short:"U" long:"cuda" description:"Use CUDA if GPU supports it"`
 	Autocalibrate     string `short:"A" long:"autocalibrate" description:"Time target in milliseconds to spend executing hashes on the device during each iteration. Single global value or a comma separated list."`
 	AutocalibrateInts []int
 	Devices           string `short:"D" long:"devices" description:"Single device ID or a comma separated list of device IDs to use."`
@@ -266,13 +264,8 @@ func loadConfig() (*config, []string, error) {
 		os.Exit(0)
 	}
 
-	if preCfg.ListCuDevices {
-		ListCuDevices()
-		os.Exit(0)
-	}
-
 	if preCfg.ShowVersion {
-		fmt.Println(appName, "version", version())
+		fmt.Println(appName, gpuLib(), "version", version())
 		os.Exit(0)
 	}
 

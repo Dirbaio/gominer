@@ -1,5 +1,7 @@
 // Copyright (c) 2016 The Decred developers.
 
+// +build cuda,!opencl
+
 package main
 
 /*
@@ -14,6 +16,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -31,6 +34,62 @@ const (
 	blockx          = threadsPerBlock
 )
 
+// Return the GPU library in use.
+func gpuLib() string {
+	return "Cuda"
+}
+
+const (
+	localWorksize      = 64
+	cuOutputBufferSize = 64
+)
+
+type Device struct {
+	// The following variables must only be used atomically.
+	fanPercent  uint32
+	temperature uint32
+
+	sync.Mutex
+	index int
+	cuda  bool
+
+	deviceName    string
+	fanTempActive bool
+	kind          string
+
+	// Items for CUDA device
+	cuDeviceID cu.Device
+	cuContext  cu.Context
+	//cuInput        cu.DevicePtr
+	cuInSize       int64
+	cuOutputBuffer []float64
+
+	workSize uint32
+
+	// extraNonce is the device extraNonce, where the first
+	// byte is the device ID (supporting up to 255 devices)
+	// while the last 3 bytes is the extraNonce value. If
+	// the extraNonce goes through all 0x??FFFFFF values,
+	// it will reset to 0x??000000.
+	extraNonce    uint32
+	currentWorkID uint32
+
+	midstate  [8]uint32
+	lastBlock [16]uint32
+
+	work     work.Work
+	newWork  chan *work.Work
+	workDone chan []byte
+	hasWork  bool
+
+	started          uint32
+	allDiffOneShares uint64
+	validShares      uint64
+	invalidShares    uint64
+
+	quit chan struct{}
+}
+
 func decredCPUSetBlock52(input *[192]byte) {
 	if input == nil {
 		panic("input is nil")
@@ -43,7 +102,7 @@ func decredHashNonce(gridx, blockx, threads uint32, startNonce uint32, nonceResu
 		C.uint32_t(startNonce), (*C.uint32_t)(unsafe.Pointer(nonceResults)), C.uint32_t(targetHigh))
 }
 
-func deviceInfoNVIDIA(index int) (uint32, uint32) {
+func deviceInfo(index int) (uint32, uint32) {
 	fanPercent := uint32(0)
 	temperature := uint32(0)
 
@@ -76,7 +135,7 @@ func deviceInfoNVIDIA(index int) (uint32, uint32) {
 	return fanPercent, temperature
 }
 
-func getCUInfo() ([]cu.Device, error) {
+func getInfo() ([]cu.Device, error) {
 	cu.Init(0)
 	ids := cu.DeviceGetCount()
 	minrLog.Infof("%v GPUs", ids)
@@ -119,8 +178,8 @@ func getCUDevices() ([]cu.Device, error) {
 	return devices, nil
 }
 
-// ListCuDevices prints a list of CUDA capable GPUs present.
-func ListCuDevices() {
+// ListDevices prints a list of CUDA capable GPUs present.
+func ListDevices() {
 	// CUDA devices
 	// Because mumux3/3/cuda/cu likes to panic instead of error.
 	defer func() {
@@ -152,7 +211,7 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 
 	d.cuInSize = 21
 
-	fanPercent, temperature := deviceInfoNVIDIA(d.index)
+	fanPercent, temperature := deviceInfo(d.index)
 	// Newer cards will idle with the fan off so just check if we got
 	// a good temperature reading
 	if temperature != 0 {
@@ -168,7 +227,7 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 	return d, nil
 }
 
-func (d *Device) runCuDevice() error {
+func (d *Device) runDevice() error {
 	// Bump the extraNonce for the device it's running on
 	// when you begin mining. This ensures each GPU is doing
 	// different work. If the extraNonce has already been
@@ -285,4 +344,50 @@ func minUint32(a, b uint32) uint32 {
 	} else {
 		return b
 	}
+}
+
+func newMinerDevs(m *Miner) (*Miner, int, error) {
+	deviceListIndex := 0
+	deviceListEnabledCount := 0
+
+	CUdeviceIDs, err := getInfo()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// XXX Can probably combine these bits with the opencl ones once
+	// I decide what to do about the types.
+
+	for _, CUDeviceID := range CUdeviceIDs {
+		miningAllowed := false
+
+		// Enforce device restrictions if they exist
+		if len(cfg.DeviceIDs) > 0 {
+			for _, i := range cfg.DeviceIDs {
+				if deviceListIndex == i {
+					miningAllowed = true
+				}
+			}
+		} else {
+			miningAllowed = true
+		}
+
+		if miningAllowed {
+			newDevice, err := NewCuDevice(deviceListIndex, deviceListEnabledCount, CUDeviceID, m.workDone)
+			deviceListEnabledCount++
+			m.devices = append(m.devices, newDevice)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+		deviceListIndex++
+	}
+
+	return m, deviceListEnabledCount, nil
+}
+
+func (d *Device) Release() {
+	d.cuContext.SetCurrent()
+	//d.cuInput.Free()
+	cu.CtxDestroy(&d.cuContext)
 }
