@@ -45,14 +45,14 @@ func NewMiner() (*Miner, error) {
 		m.pool = s
 	}
 
+	deviceListIndex := 0
+	deviceListEnabledCount := 0
+
 	if cfg.UseCuda {
 		CUdeviceIDs, err := getCUInfo()
 		if err != nil {
 			return nil, err
 		}
-
-		deviceListIndex := 0
-		deviceListEnabledCount := 0
 
 		// XXX Can probably combine these bits with the opencl ones once
 		// I decide what to do about the types.
@@ -81,19 +81,11 @@ func NewMiner() (*Miner, error) {
 			}
 			deviceListIndex++
 		}
-
-		if deviceListEnabledCount == 0 {
-			return nil, fmt.Errorf("No devices started")
-		}
-
 	} else {
 		platformIDs, err := getCLPlatforms()
 		if err != nil {
 			return nil, fmt.Errorf("Could not get CL platforms: %v", err)
 		}
-
-		deviceListIndex := 0
-		deviceListEnabledCount := 0
 
 		for p := range platformIDs {
 			platformID := platformIDs[p]
@@ -125,11 +117,11 @@ func NewMiner() (*Miner, error) {
 				}
 				deviceListIndex++
 			}
-
-			if deviceListEnabledCount == 0 {
-				return nil, fmt.Errorf("No devices started")
-			}
 		}
+	}
+
+	if deviceListEnabledCount == 0 {
+		return nil, fmt.Errorf("No devices started")
 	}
 
 	m.started = uint32(time.Now().Unix())
