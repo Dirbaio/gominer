@@ -316,7 +316,5 @@ func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
 		return false, err
 	}
 
-	pool.Submitted = true
-
 	return true, nil
 }

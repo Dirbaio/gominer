@@ -53,10 +53,9 @@ type Stratum struct {
 	ID        uint64
 	authID    uint64
 	subID     uint64
-	submitID  uint64
+	submitIDs []uint64
 	Diff      float64
 	Target    *big.Int
-	Submitted bool
 	PoolWork  NotifyWork
 }
 
@@ -153,6 +152,25 @@ type Submit struct {
 
 // errJsonType is an error for json that we do not expect.
 var errJsonType = errors.New("Unexpected type in json.")
+
+func sliceContains(s []uint64, e uint64) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
+func sliceRemove(s []uint64, e uint64) []uint64 {
+	for i, a := range s {
+		if a == e {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+
+	return s
+}
 
 // StratumConn starts the initial connection to a stratum pool and sets defaults
 // in the pool object.
@@ -309,7 +327,7 @@ func (s *Stratum) handleBasicReply(resp interface{}) {
 			log.Error("Auth failure.")
 		}
 	}
-	if aResp.ID == s.submitID {
+	if sliceContains(s.submitIDs, aResp.ID.(uint64)) {
 		if aResp.Result {
 			atomic.AddUint64(&s.ValidShares, 1)
 			log.Debug("Share accepted")
@@ -317,7 +335,7 @@ func (s *Stratum) handleBasicReply(resp interface{}) {
 			atomic.AddUint64(&s.InvalidShares, 1)
 			log.Error("Share rejected: ", aResp.Error.ErrStr)
 		}
-		s.Submitted = false
+		s.submitIDs = sliceRemove(s.submitIDs, aResp.ID.(uint64))
 	}
 }
 
@@ -425,7 +443,7 @@ func (s *Stratum) Auth() error {
 		return errJsonType
 	}
 	s.authID = id
-	s.ID += 1
+	s.ID++
 	log.Tracef("%v", msg)
 	m, err := json.Marshal(msg)
 	if err != nil {
@@ -467,7 +485,7 @@ func (s *Stratum) Subscribe() error {
 	return nil
 }
 
-// Unmarshal provides a json umnarshaler for the commands.
+// Unmarshal provides a json unmarshaler for the commands.
 // I'm sure a lot of this can be generalized but the json we deal with
 // is pretty yucky.
 func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
@@ -603,7 +621,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		resp.ExtraNonce2Length = resi[2].(float64)
 		return resp, nil
 	}
-	if id == s.submitID && s.Submitted {
+	if sliceContains(s.submitIDs, id) {
 		var (
 			objmap      map[string]json.RawMessage
 			id          uint64
@@ -953,15 +971,14 @@ func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 		return sub, err
 	}
 
-	s.ID++
-	sub.ID = s.ID
-	s.submitID = s.ID
-	s.Submitted = true
-
 	latestWorkTs := atomic.LoadUint32(&s.latestJobTime)
 	if uint32(submittedHeader.Timestamp.Unix()) != latestWorkTs {
 		return sub, ErrStratumStaleWork
 	}
+
+	s.ID++
+	sub.ID = s.ID
+	s.submitIDs = append(s.submitIDs, s.ID)
 
 	// The timestamp string should be:
 	//
