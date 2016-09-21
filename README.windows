@@ -1,0 +1,55 @@
+Windows support for gominer requires very specific build steps.  Unlike Linux
+Windows requires dynamically linked libraries and some additional hoops to jump
+through.  Great pains went into making the build as simple as possible and
+unfortunately it is still complex and requires specific versions.  Effort went
+into using less painful toolchains but those ended all in failure.  It is
+advisable to install the toolchain on a fresh machines; leftovers are going to
+make stuff not work right.  Please accept the dark magic used here as gospel
+for any other way is a sin.
+
+========================================================================
+MAKE SURE THERE ARE NO OTHER GCC/BINUTILS IN THE PATH!
+MAKE SURE THERE ARE NO LEFTOVER INCLUDES AND LIBRARIES!
+ONLY USE MINGW64!
+YOU HAVE BEEN WARNED!
+========================================================================
+
+Note that the build system copies various directories into the relative path in
+order to work arround issues in cgo/windows.
+
+Compiling gominer on windows requires installation in following order:
+* Microsoft Visual Studio 2013 (cl.exe, used by nvcc)
+* NVIDIA CUDA V7.0 drivers (includes nvml.dll) and GPU toolkit (nvcc, headers, libs etc)
+* Official Go 1.7.1 installed in the default location and with GOPATH set
+* Git-Bash (for the shell and to check out code)
+* MingW64 (only mingw64 with defaults works!) http://sourceforge.net/projects/mingw-w64/
+
+* Setup environment (in advanced windows settings!):
+* ensure that cl.exe, go.exe and git.exe are in PATH
+* ensure that GOPATH is set somewhere sane (e.g. %HOMEPATH%\go)
+
+Install mumax/3 (in cmd.exe):
+$ go get github.com/mumax/3
+
+Install glide (in git-bash):
+$ go get github.com/Masterminds/glide
+
+Download gominer source (in git-bash; will fail compilation but that is ok):
+$ go get github.com/decred/gominer
+
+Setup vendoring for gominer
+$ cd $GOPATH/src/github.com/decred/gominer
+$ glide i
+
+Building CUDA (in git-bash):
+$ cd $GOPATH/src/github.com/decred/gominer
+$ mingw32-make.exe
+
+Distribution requires 3 files:
+* gominer.exe
+* decred.dll (relative path -> obj/decred.dll)
+* nvml.dll (relative path -> nvidia/NVSMI/nvml.dll)
+
+NOTE: CUDA does not work over remote desktop.  If one wishes to remotely manage
+a windows machine that uses CUDA one MUST use VNC instead.  This is a CUDA
+issue, not a gominer issue.

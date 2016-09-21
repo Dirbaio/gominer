@@ -1,24 +1,18 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
+extern void	go_mem_notify(cl_mem memobj, void *user_data);
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-extern void go_mem_notify(cl_mem memobj, void *user_data);
-static void CL_CALLBACK c_mem_notify(cl_mem memobj, void *user_data) {
+static void CL_CALLBACK
+c_mem_notify(cl_mem memobj, void *user_data)
+{
 	go_mem_notify(memobj, user_data);
 }
 
-static cl_int CLSetMemObjectDestructorCallback(cl_mem memobj, void *user_data){
+static cl_int
+CLSetMemObjectDestructorCallback(cl_mem memobj, void *user_data)
+{
     return clSetMemObjectDestructorCallback(memobj, c_mem_notify, user_data);
 }
 */

@@ -5,12 +5,10 @@
 package main
 
 /*
-#cgo LDFLAGS: -L/opt/cuda/lib64 -L/opt/cuda/lib -lcuda -lcudart -lstdc++ obj/cuda.a
-#include <stdint.h>
-void decred_hash_nonce(uint32_t grid, uint32_t block, uint32_t threads, uint32_t startNonce, uint32_t *resNonce, uint32_t targetHigh);
-void decred_cpu_setBlock_52(const uint32_t *input);
+#include "decred.h"
 */
 import "C"
+
 import (
 	"encoding/binary"
 	"fmt"

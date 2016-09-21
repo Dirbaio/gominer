@@ -14,6 +14,12 @@
 #include <memory.h>
 #include <miner.h>
 
+#if defined(_WIN32)
+#define DLLEXPORT __declspec(dllexport)
+#else
+#define DLLEXPORT
+#endif /* _WIN32 */
+
 extern "C" {
 #include <sph/sph_blake.h>
 }
@@ -179,15 +185,17 @@ __global__ void decred_gpu_hash_nonce(const uint32_t threads, const uint32_t sta
 }
 
 extern "C" {
-void decred_hash_nonce(uint32_t grid, uint32_t block, uint32_t threads, uint32_t startNonce, uint32_t *resNonce, uint32_t targetHigh)
+DLLEXPORT void
+decred_hash_nonce(uint32_t grid, uint32_t block, uint32_t threads,
+    uint32_t startNonce, uint32_t *resNonce, uint32_t targetHigh)
 {
 	decred_gpu_hash_nonce <<<grid, block>>> (threads, startNonce, resNonce, targetHigh);
 }
 }
 
 extern "C" {
-__host__
-void decred_cpu_setBlock_52(const uint32_t *input)
+__host__ DLLEXPORT void
+decred_cpu_setBlock_52(const uint32_t *input)
 {
 	/*
 	for (int i = 0; i < 180/4; i++)

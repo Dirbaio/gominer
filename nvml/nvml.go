@@ -1,9 +1,10 @@
 package nvml
 
-// #cgo LDFLAGS: -lnvidia-ml
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <nvml.h>
+/*
+#include <stdio.h>
+#include <stdlib.h>
+#include <nvml.h>
+*/
 import "C"
 
 import (

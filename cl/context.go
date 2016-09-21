@@ -1,42 +1,48 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+// this needs to come out
+typedef void*	pVoid;
+extern void	go_ctx_notify(char *errinfo, void *private_info, int cb,
+		    void *user_data);
 
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-
-extern void go_ctx_notify(char *errinfo, void *private_info, int cb, void *user_data);
-static void CL_CALLBACK c_ctx_notify(const char *errinfo, const void *private_info, size_t cb, void *user_data) {
+static void CL_CALLBACK	c_ctx_notify(const char *errinfo,
+			    const void *private_info, size_t cb,
+			    void *user_data)
+{
 	go_ctx_notify((char *)errinfo, (void *)private_info, cb, user_data);
 }
 
-typedef void* pVoid;
-static pVoid* allocArray(size_t n) { return (pVoid*)malloc(n * sizeof(pVoid)); }
-static void   freeArray (pVoid* p) { free(p); }
-
-static cl_context CLCreateContext(	const cl_context_properties *  	properties,
-					                cl_uint                  		num_devices,
-					                const cl_device_id *     		devices,
-					                void *                   		user_data,
-					                cl_int *                 		errcode_ret){
-	return clCreateContext(properties, num_devices, devices, c_ctx_notify, user_data, errcode_ret);
+static pVoid
+*allocArray(size_t n)
+{
+	return (pVoid*)malloc(n * sizeof(pVoid));
 }
 
-static cl_context CLCreateContextFromType(	const cl_context_properties *  	properties,
-					                		cl_device_type     				device_type,
-					                		void *                   		user_data,
-					                		cl_int *                 		errcode_ret){
-    return clCreateContextFromType(properties, device_type, c_ctx_notify, user_data, errcode_ret);
+static void
+freeArray(pVoid* p)
+{
+	free(p);
 }
+
+static cl_context
+CLCreateContext(const cl_context_properties *properties, cl_uint num_devices,
+    const cl_device_id *devices, void *user_data, cl_int *errcode_ret)
+{
+	return clCreateContext(properties, num_devices, devices, c_ctx_notify,
+	    user_data, errcode_ret);
+}
+
+static cl_context
+CLCreateContextFromType(const cl_context_properties *properties,
+    cl_device_type device_type, void *user_data, cl_int *errcode_ret)
+{
+	return clCreateContextFromType(properties, device_type, c_ctx_notify,
+	    user_data, errcode_ret);
+}
+
 */
 import "C"
 import "unsafe"
