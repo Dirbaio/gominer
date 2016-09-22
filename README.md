@@ -4,7 +4,7 @@
 
 You need to have the OpenCL or CUDA development libraries
 installed (depending on which version of gominer you would like to
-build) . You also need the runtime and drives for the one you plan
+build) . You also need the runtime and drivers for the one you plan
 on running (CUDA for nvidia, OpenCL for anything) To download and
 build gominer, run:
 
@@ -17,12 +17,17 @@ cd gominer
 glide i
 ```
 
-for opencl:
+For OpenCL:
 ```
 go install -tags 'opencl'
 ```
 
-for cuda:
+For OpenCL with AMD Device Library (ADL) support:
+```
+go install -tags 'opencladl'
+```
+
+For CUDA with NVIDIA Management Library (NVML) support:
 ```
 make
 go install -tags 'cuda'

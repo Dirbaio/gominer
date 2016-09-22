@@ -36,7 +36,7 @@ const (
 
 // Return the GPU library in use.
 func gpuLib() string {
-	return "Cuda"
+	return "CUDA"
 }
 
 const (
@@ -102,7 +102,7 @@ func decredHashNonce(gridx, blockx, threads uint32, startNonce uint32, nonceResu
 		C.uint32_t(startNonce), (*C.uint32_t)(unsafe.Pointer(nonceResults)), C.uint32_t(targetHigh))
 }
 
-func deviceInfo(index int) (uint32, uint32) {
+func deviceStats(index int) (uint32, uint32) {
 	fanPercent := uint32(0)
 	temperature := uint32(0)
 
@@ -211,7 +211,7 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 
 	d.cuInSize = 21
 
-	fanPercent, temperature := deviceInfo(d.index)
+	fanPercent, temperature := deviceStats(d.index)
 	// Newer cards will idle with the fan off so just check if we got
 	// a good temperature reading
 	if temperature != 0 {

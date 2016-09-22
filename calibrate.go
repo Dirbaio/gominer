@@ -1,6 +1,6 @@
 // Copyright (c) 2016 The Decred developers.
 
-// +build opencl,!cuda
+// +build !cuda
 
 package main
 

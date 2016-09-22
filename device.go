@@ -197,8 +197,8 @@ func (d *Device) UpdateFanTemp() {
 		// but could be split up later.  Anything else (Intel) just
 		// don't do anything.
 		switch d.kind {
-		case "amdgpu", "nvidia":
-			fanPercent, temperature := deviceInfo(d.index)
+		case "adl", "amdgpu", "nvidia":
+			fanPercent, temperature := deviceStats(d.index)
 			atomic.StoreUint32(&d.fanPercent, fanPercent)
 			atomic.StoreUint32(&d.temperature, temperature)
 			break

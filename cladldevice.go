@@ -1,25 +1,21 @@
 // Copyright (c) 2016 The Decred developers.
 
-// +build opencl,!cuda,!opencladl
+// +build opencladl,!cuda,!opencl
 
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
-	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
+	"github.com/decred/gominer/adl"
 	"github.com/decred/gominer/cl"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
@@ -27,7 +23,7 @@ import (
 
 // Return the GPU library in use.
 func gpuLib() string {
-	return "OpenCL"
+	return "OpenCL ADL"
 }
 
 const (
@@ -126,95 +122,15 @@ type Device struct {
 	quit chan struct{}
 }
 
-// If the device order and OpenCL index are ever not the same then we can
-// implement topology finding code:
-// https://github.com/Oblomov/clinfo/blob/master/src/clinfo.c#L1061-L1126
-func determineDeviceKind(index int, deviceName string) string {
-	deviceKind := "unknown"
-
-	switch runtime.GOOS {
-	case "linux":
-		// check if the amdgpu driver is loaded
-		if _, err := os.Stat("/sys/module/amdgpu"); err == nil {
-			// make sure a sysfs entry exists for the index of this device
-			if _, err := os.Stat("/sys/class/drm/card" + strconv.Itoa(index)); err == nil {
-				deviceKind = "amdgpu"
-			}
-		}
-		break
-	}
-
-	return deviceKind
-}
-
 func deviceStats(index int) (uint32, uint32) {
-	basePath := "/sys/class/drm/card_I_/device/hwmon/"
-	basePath = strings.Replace(basePath, "_I_", strconv.Itoa(index), 1)
 	fanPercent := uint32(0)
-	hwmonPath := basePath + "_HWMON_/"
-	hwmonName := ""
 	temperature := uint32(0)
-
-	files, err := ioutil.ReadDir(basePath)
-	if err != nil {
-		minrLog.Errorf("unable to read AMDGPU sysfs dir: %v", err)
-		return fanPercent, temperature
-	}
-
-	for _, f := range files {
-		// we should only find one entry but the API may not be stable
-		if strings.Contains(f.Name(), "hwmon") {
-			hwmonName = f.Name()
-		}
-	}
-
-	if hwmonName == "" {
-		minrLog.Errorf("unable to determine AMDGPU hwmon path")
-		return fanPercent, temperature
-	}
-
-	hwmonPath = strings.Replace(hwmonPath, "_HWMON_", hwmonName, 1)
-	pwmMax := uint32(255) // could read this from pwm1_max but it seems to be a constant
 	tempDivisor := uint32(1000)
 
-	fanPercent = deviceStatsReadSysfsEntry(hwmonPath + "pwm1")
-	fanPercentFloat := float64(fanPercent) / float64(pwmMax) * float64(100)
-	fanPercent = uint32(fanPercentFloat)
-	temperature = deviceStatsReadSysfsEntry(hwmonPath+"temp1_input") / tempDivisor
+	fanPercent = adl.DeviceFanPercent(index)
+	temperature = adl.DeviceTemperature(index) / tempDivisor
 
 	return fanPercent, temperature
-}
-
-func deviceStatsReadSysfsEntry(path string) uint32 {
-	res := uint32(0)
-	dataRaw := ""
-
-	f, err := os.Open(path)
-	if err != nil {
-		if err != nil {
-			minrLog.Errorf("unable to open %v", path)
-			return res
-		}
-	}
-	defer f.Close()
-
-	r := bufio.NewScanner(f)
-	for r.Scan() {
-		dataRaw = string(r.Bytes())
-	}
-	if err := r.Err(); err != nil {
-		return res
-	}
-
-	dataInt, err := strconv.Atoi(dataRaw)
-	if err != nil {
-		minrLog.Errorf("unable to convert to int %v", err)
-		return res
-	}
-
-	res = uint32(dataInt)
-
-	return res
 }
 
 func getCLInfo() (cl.CL_platform_id, []cl.CL_device_id, error) {
@@ -293,6 +209,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		platformID:  platformID,
 		deviceID:    deviceID,
 		deviceName:  getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"),
+		kind:        "adl",
 		quit:        make(chan struct{}),
 		newWork:     make(chan *work.Work, 5),
 		workDone:    workDone,
@@ -431,20 +348,13 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		d.index, globalWorkSize, intensity)
 	d.workSize = globalWorkSize
 
-	// Determine the device/driver kind
-	d.kind = determineDeviceKind(d.index, d.deviceName)
-
-	switch d.kind {
-	case "amdgpu":
-		fanPercent, temperature := deviceStats(d.index)
-		// Newer cards will idle with the fan off so just check if we got
-		// a good temperature reading
-		if temperature != 0 {
-			atomic.StoreUint32(&d.fanPercent, fanPercent)
-			atomic.StoreUint32(&d.temperature, temperature)
-			d.fanTempActive = true
-		}
-		break
+	fanPercent, temperature := deviceStats(d.index)
+	// Newer cards will idle with the fan off so just check if we got
+	// a good temperature reading
+	if temperature != 0 {
+		atomic.StoreUint32(&d.fanPercent, fanPercent)
+		atomic.StoreUint32(&d.temperature, temperature)
+		d.fanTempActive = true
 	}
 
 	return d, nil
