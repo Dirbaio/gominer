@@ -251,13 +251,6 @@ void sha256d(unsigned char *hash, const unsigned char *data, int len);
 
 struct work;
 
-extern int scanhash_decred(int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done);
-
-/* free device allocated memory per algo */
-void algo_free_all(int thr_id);
-
-extern void free_decred(int thr_id);
-
 /* api related */
 void *api_thread(void *userdata);
 void api_set_throughput(int thr_id, uint32_t throughput);
@@ -411,37 +404,6 @@ uint32_t cuda_default_throughput(int thr_id, uint32_t defcount);
 void cuda_log_lasterror(int thr_id, const char* func, int line);
 void cuda_clear_lasterror();
 #define CUDA_LOG_ERROR() cuda_log_lasterror(thr_id, __func__, __LINE__)
-
-#define CL_N    "\x1B[0m"
-#define CL_RED  "\x1B[31m"
-#define CL_GRN  "\x1B[32m"
-#define CL_YLW  "\x1B[33m"
-#define CL_BLU  "\x1B[34m"
-#define CL_MAG  "\x1B[35m"
-#define CL_CYN  "\x1B[36m"
-
-#define CL_BLK  "\x1B[22;30m" /* black */
-#define CL_RD2  "\x1B[22;31m" /* red */
-#define CL_GR2  "\x1B[22;32m" /* green */
-#define CL_YL2  "\x1B[22;33m" /* dark yellow */
-#define CL_BL2  "\x1B[22;34m" /* blue */
-#define CL_MA2  "\x1B[22;35m" /* magenta */
-#define CL_CY2  "\x1B[22;36m" /* cyan */
-#define CL_SIL  "\x1B[22;37m" /* gray */
-
-#ifdef WIN32
-#define CL_GRY  "\x1B[01;30m" /* dark gray */
-#else
-#define CL_GRY  "\x1B[90m"    /* dark gray selectable in putty */
-#endif
-#define CL_LRD  "\x1B[01;31m" /* light red */
-#define CL_LGR  "\x1B[01;32m" /* light green */
-#define CL_LYL  "\x1B[01;33m" /* tooltips */
-#define CL_LBL  "\x1B[01;34m" /* light blue */
-#define CL_LMA  "\x1B[01;35m" /* light magenta */
-#define CL_LCY  "\x1B[01;36m" /* light cyan */
-
-#define CL_WHT  "\x1B[01;37m" /* white */
 
 extern void format_hashrate(double hashrate, char *output);
 extern void applog(int prio, const char *fmt, ...);
@@ -651,44 +613,7 @@ void applog_hash64(void *hash);
 void applog_compare_hash(void *hash, void *hash_ref);
 
 void print_hash_tests(void);
-void blake256hash(void *output, const void *input, int8_t rounds);
-void blake2s_hash(void *output, const void *input);
-void bmw_hash(void *state, const void *input);
-void c11hash(void *output, const void *input);
 void decred_hash(void *state, const void *input);
-void deephash(void *state, const void *input);
-void luffa_hash(void *state, const void *input);
-void fresh_hash(void *state, const void *input);
-void fugue256_hash(unsigned char* output, const unsigned char* input, int len);
-void heavycoin_hash(unsigned char* output, const unsigned char* input, int len);
-void keccak256_hash(void *state, const void *input);
-unsigned int jackpothash(void *state, const void *input);
-void groestlhash(void *state, const void *input);
-void lbry_hash(void *output, const void *input);
-void lyra2re_hash(void *state, const void *input);
-void lyra2v2_hash(void *state, const void *input);
-void myriadhash(void *state, const void *input);
-void neoscrypt(uchar *output, const uchar *input, uint32_t profile);
-void nist5hash(void *state, const void *input);
-void pentablakehash(void *output, const void *input);
-void quarkhash(void *state, const void *input);
-void qubithash(void *state, const void *input);
-void scrypthash(void* output, const void* input);
-void scryptjane_hash(void* output, const void* input);
-void sibhash(void *output, const void *input);
-void skeincoinhash(void *output, const void *input);
-void skein2hash(void *output, const void *input);
-void s3hash(void *output, const void *input);
-void wcoinhash(void *state, const void *input);
-void whirlxHash(void *state, const void *input);
-void x11evo_hash(void *output, const void *input);
-void x11hash(void *output, const void *input);
-void x13hash(void *output, const void *input);
-void x14hash(void *output, const void *input);
-void x15hash(void *output, const void *input);
-void x17hash(void *output, const void *input);
-void zr5hash(void *output, const void *input);
-void zr5hash_pok(void *output, uint32_t *pdata);
 
 #ifdef __cplusplus
 }
