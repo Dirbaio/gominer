@@ -136,21 +136,18 @@ func (d *Device) PrintStats() {
 	temperature := atomic.LoadUint32(&d.temperature)
 
 	if fanPercent != 0 || temperature != 0 {
-		minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work, Fan=%v%% Temp=%vC",
+		minrLog.Infof("DEV #%d (%s) %v Fan=%v%% T=%vC",
 			d.index,
 			d.deviceName,
 			util.FormatHashRate(averageHashRate),
-			d.validShares,
-			d.validShares+d.invalidShares,
 			fanPercent,
 			temperature)
 	} else {
-		minrLog.Infof("DEV #%d (%s) reporting average hash rate %v, %v/%v valid work",
+		minrLog.Infof("DEV #%d (%s) %v",
 			d.index,
 			d.deviceName,
 			util.FormatHashRate(averageHashRate),
-			d.validShares,
-			d.validShares+d.invalidShares)
+		)
 	}
 }
 
