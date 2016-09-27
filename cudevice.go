@@ -19,7 +19,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/mumax/3/cuda/cu"
+	"github.com/jcvernaleo/3/cuda/cu"
 
 	"github.com/decred/gominer/nvml"
 	"github.com/decred/gominer/util"
@@ -61,9 +61,7 @@ type Device struct {
 	tempTarget               uint32
 
 	// Items for CUDA device
-	cuDeviceID cu.Device
-	cuContext  cu.Context
-	//cuInput        cu.DevicePtr
+	cuDeviceID     cu.Device
 	cuInSize       int64
 	cuOutputBuffer []float64
 
@@ -280,21 +278,19 @@ func (d *Device) runDevice() error {
 	d.extraNonce += uint32(d.index) << 24
 	d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
 
-	// Need to have this stuff here for a ctx vs thread issue.
+	// Need to have this stuff here for a device vs thread issue.
 	runtime.LockOSThread()
 
-	// Create the CU context
-	d.cuContext = cu.CtxCreate(cu.CTX_BLOCKING_SYNC, d.cuDeviceID)
-
-	// Allocate the input region
-	d.cuContext.SetCurrent()
+	cu.DeviceReset()
+	cu.SetDevice(d.cuDeviceID)
+	cu.SetDeviceFlags(cu.DeviceScheduleBlockingSync)
 
 	// kernel is built with nvcc, not an api call so must be done
 	// at compile time.
 
 	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
-	nonceResultsH := cu.MemAllocHost(d.cuInSize * 4)
-	nonceResultsD := cu.MemAlloc(d.cuInSize * 4)
+	nonceResultsH := cu.MallocHost(d.cuInSize * 4)
+	nonceResultsD := cu.Malloc(d.cuInSize * 4)
 	defer cu.MemFreeHost(nonceResultsH)
 	defer nonceResultsD.Free()
 
@@ -432,7 +428,6 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 }
 
 func (d *Device) Release() {
-	d.cuContext.SetCurrent()
-	//d.cuInput.Free()
-	cu.CtxDestroy(&d.cuContext)
+	cu.SetDevice(d.cuDeviceID)
+	cu.DeviceReset()
 }

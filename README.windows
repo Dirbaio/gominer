@@ -29,7 +29,7 @@ Compiling gominer on windows requires installation in following order:
 * ensure that GOPATH is set somewhere sane (e.g. %HOMEPATH%\go)
 
 Install mumax/3 (in cmd.exe):
-$ go get github.com/mumax/3
+$ go get github.com/jcvernaleo/3
 
 Install glide (in git-bash):
 $ go get github.com/Masterminds/glide

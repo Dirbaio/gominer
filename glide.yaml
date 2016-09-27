@@ -16,3 +16,6 @@ import:
   - chaincfg/chainhash
   - wire
 - package: github.com/decred/dcrutil
+- package: github.com/jcvernaleo/3
+  subpackages:
+  - cuda/cu

@@ -9,7 +9,7 @@ package main
 */
 import "C"
 import (
-	"github.com/mumax/3/cuda/cu"
+	"github.com/jcvernaleo/3/cuda/cu"
 	"unsafe"
 )
 
