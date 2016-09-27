@@ -49,4 +49,8 @@ imports:
   version: 9859625390900fa7029ce8cfdeb430f239e502d4
   subpackages:
   - cuda/cu
+- name: golang.org/x/sys
+  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  subpackages:
+  - unix
 testImports: []

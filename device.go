@@ -19,6 +19,31 @@ import (
 
 var chainParams = &chaincfg.MainNetParams
 
+// Constants for fan and temperature bits
+const (
+	ADLFanFailSafe            = uint32(80)
+	AMDGPUFanFailSafe         = uint32(204)
+	AMDGPUFanMax              = uint32(255)
+	AMDTempDivisor            = uint32(1000)
+	ChangeLevelNone           = "None"
+	ChangeLevelSmall          = "Small"
+	ChangeLevelLarge          = "Large"
+	DeviceKindAMDGPU          = "AMDGPU"
+	DeviceKindADL             = "ADL"
+	DeviceKindNVML            = "NVML"
+	DeviceKindUnknown         = "Unknown"
+	DeviceTypeCPU             = "CPU"
+	DeviceTypeGPU             = "GPU"
+	FanControlHysteresis      = uint32(3)
+	FanControlAdjustmentLarge = uint32(10)
+	FanControlAdjustmentSmall = uint32(5)
+	SeverityLow               = "Low"
+	SeverityHigh              = "High"
+	TargetLower               = "Lower"
+	TargetHigher              = "Raise"
+	TargetNone                = "None"
+)
+
 func (d *Device) updateCurrentWork() {
 	var w *work.Work
 	if d.hasWork {
@@ -73,6 +98,172 @@ func (d *Device) Run() {
 	}
 }
 
+// This is pretty hacky/proof-of-concepty
+func (d *Device) fanControl() {
+	d.Lock()
+	defer d.Unlock()
+	fanChange := 0
+	fanChangeLevel := ""
+	fanIntent := ""
+	fanLast := d.fanControlLastFanPercent
+	tempChange := 0
+	tempChangeLevel := ""
+	tempDirection := ""
+	tempLast := d.fanControlLastTemp
+	tempMinAllowed := d.tempTarget - FanControlHysteresis
+	tempMaxAllowed := d.tempTarget + FanControlHysteresis
+	tempSeverity := ""
+	tempTargetType := ""
+	firstRun := false
+
+	// Save the values we read for the next time the loop is run
+	fanCur := atomic.LoadUint32(&d.fanPercent)
+	tempCur := atomic.LoadUint32(&d.temperature)
+	d.fanControlLastFanPercent = fanCur
+	d.fanControlLastTemp = tempCur
+
+	// if this is our first run then set some more variables
+	if tempLast == 0 && fanLast == 0 {
+		fanLast = fanCur
+		tempLast = tempCur
+		firstRun = true
+	}
+
+	// Everything is OK so just return without adjustment
+	if tempCur <= tempMaxAllowed && tempCur >= tempMinAllowed {
+		minrLog.Tracef("DEV #%d within acceptable limits "+
+			"curTemp %v is above minimum %v and below maximum %v",
+			d.index, tempCur, tempMinAllowed, tempMaxAllowed)
+		return
+	}
+
+	// Lower the temperature of the device
+	if tempCur > tempMaxAllowed {
+		tempTargetType = TargetLower
+		if tempCur-tempMaxAllowed > FanControlHysteresis {
+			tempSeverity = SeverityHigh
+		} else {
+			tempSeverity = SeverityLow
+		}
+	}
+
+	// Raise the temperature of the device
+	if tempCur < tempMinAllowed {
+		tempTargetType = TargetHigher
+		if tempMaxAllowed-tempCur >= FanControlHysteresis {
+			tempSeverity = SeverityHigh
+		} else {
+			tempSeverity = SeverityLow
+		}
+	}
+
+	// we increased the fan to lower the device temperature last time
+	if fanLast < fanCur {
+		fanChange = int(fanCur) - int(fanLast)
+		fanIntent = TargetHigher
+	}
+	// we decreased the fan to raise the device temperature last time
+	if fanLast > fanCur {
+		fanChange = int(fanLast) - int(fanCur)
+		fanIntent = TargetLower
+	}
+	// we didn't make any changes
+	if fanLast == fanCur {
+		fanIntent = TargetNone
+	}
+
+	if fanChange == 0 {
+		fanChangeLevel = ChangeLevelNone
+	} else if fanChange == int(FanControlAdjustmentSmall) {
+		fanChangeLevel = ChangeLevelSmall
+	} else if fanChange == int(FanControlAdjustmentLarge) {
+		fanChangeLevel = ChangeLevelLarge
+	} else {
+		// XXX Seems the AMDGPU driver may not support all values or
+		// changes values underneath us
+		minrLog.Tracef("DEV #%d fan changed by an unexpected value %v", d.index,
+			fanChange)
+		if fanChange < int(FanControlAdjustmentSmall) {
+			fanChangeLevel = ChangeLevelSmall
+		} else {
+			fanChangeLevel = ChangeLevelLarge
+		}
+	}
+
+	if tempLast < tempCur {
+		tempChange = int(tempCur) - int(tempLast)
+		tempDirection = "Up"
+	}
+	if tempLast > tempCur {
+		tempChange = int(tempLast) - int(tempCur)
+		tempDirection = "Down"
+	}
+	if tempLast == tempCur {
+		tempDirection = "Stable"
+	}
+
+	if tempChange == 0 {
+		tempChangeLevel = ChangeLevelNone
+	} else if tempChange > int(FanControlHysteresis) {
+		tempChangeLevel = ChangeLevelLarge
+	} else {
+		tempChangeLevel = ChangeLevelSmall
+	}
+
+	minrLog.Tracef("DEV #%d firstRun %v fanChange %v fanChangeLevel %v "+
+		"fanIntent %v tempChange %v tempChangeLevel %v tempDirection %v "+
+		" tempSeverity %v tempTargetType %v", d.index, firstRun, fanChange,
+		fanChangeLevel, fanIntent, tempChange, tempChangeLevel, tempDirection,
+		tempSeverity, tempTargetType)
+
+	// We have no idea if the device is starting cold or re-starting hot
+	// so only adjust the fans upwards a little bit.
+	if firstRun {
+		if tempTargetType == TargetLower {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+			return
+		}
+	}
+
+	// we didn't do anything last time so just match our change to the severity
+	if fanIntent == TargetNone {
+		if tempSeverity == SeverityLow {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+		} else {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelLarge)
+		}
+	}
+
+	// XXX could do some more hysteresis stuff here
+
+	// we tried to raise or lower the temperature but it didn't work so
+	// do it some more according to the severity level
+	if fanIntent == tempTargetType {
+		if tempSeverity == SeverityLow {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+		} else {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelLarge)
+		}
+	}
+
+	// we raised or lowered the temperature too much so just do a small
+	// adjustment
+	if fanIntent != tempTargetType {
+		fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+	}
+}
+
+func (d *Device) fanControlSupported(kind string) bool {
+	fanControlDrivers := []string{DeviceKindADL, DeviceKindAMDGPU}
+
+	for _, driver := range fanControlDrivers {
+		if driver == kind {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	d.Lock()
 	defer d.Unlock()
@@ -89,7 +280,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	// work check are considered to be hardware errors.
 	hashNum := blockchain.ShaHashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
-		minrLog.Errorf("DEV #%d: Hardware error found, hash %v above "+
+		minrLog.Errorf("DEV #%d Hardware error found, hash %v above "+
 			"minimum target %064x", d.index, hash, d.work.Target.Bytes())
 		d.invalidShares++
 		return
@@ -100,10 +291,10 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	if !cfg.Benchmark {
 		// Assess versus the pool or daemon target.
 		if hashNum.Cmp(d.work.Target) > 0 {
-			minrLog.Debugf("DEV #%d: Hash %v bigger than target %032x (boo)",
+			minrLog.Debugf("DEV #%d Hash %v bigger than target %032x (boo)",
 				d.index, hash, d.work.Target.Bytes())
 		} else {
-			minrLog.Infof("DEV #%d: Found hash with work below target! %v (yay)",
+			minrLog.Infof("DEV #%d Found hash with work below target! %v (yay)",
 				d.index, hash)
 			d.validShares++
 			d.workDone <- data
@@ -158,9 +349,9 @@ func (d *Device) UpdateFanTemp() {
 	if d.fanTempActive {
 		// For now amd and nvidia do more or less the same thing
 		// but could be split up later.  Anything else (Intel) just
-		// don't do anything.
+		// doesn't do anything.
 		switch d.kind {
-		case "adl", "amdgpu", "nvidia":
+		case DeviceKindADL, DeviceKindAMDGPU, DeviceKindNVML:
 			fanPercent, temperature := deviceStats(d.index)
 			atomic.StoreUint32(&d.fanPercent, fanPercent)
 			atomic.StoreUint32(&d.temperature, temperature)

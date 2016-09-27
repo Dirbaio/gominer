@@ -51,9 +51,14 @@ type Device struct {
 	index int
 	cuda  bool
 
-	deviceName    string
-	fanTempActive bool
-	kind          string
+	deviceName               string
+	deviceType               string
+	fanTempActive            bool
+	fanControlActive         bool
+	fanControlLastTemp       uint32
+	fanControlLastFanPercent uint32
+	kind                     string
+	tempTarget               uint32
 
 	// Items for CUDA device
 	cuDeviceID cu.Device
@@ -133,6 +138,12 @@ func deviceStats(index int) (uint32, uint32) {
 	return fanPercent, temperature
 }
 
+// unsupported -- just here for compilation
+func fanControlSet(index int, fanCur uint32, tempTargetType string,
+	fanChangeLevel string) {
+	minrLog.Errorf("NVML fanControl() reached but shouldn't have been")
+}
+
 func getInfo() ([]cu.Device, error) {
 	cu.Init(0)
 	ids := cu.DeviceGetCount()
@@ -198,13 +209,15 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 		index:       index,
 		cuDeviceID:  deviceID,
 		deviceName:  deviceID.Name(),
+		deviceType:  DeviceTypeGPU,
 		cuda:        true,
-		kind:        "nvidia",
+		kind:        DeviceKindNVML,
 		quit:        make(chan struct{}),
 		newWork:     make(chan *work.Work, 5),
 		workDone:    workDone,
 		fanPercent:  0,
 		temperature: 0,
+		tempTarget:  0,
 	}
 
 	d.cuInSize = 21
@@ -216,6 +229,40 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 		atomic.StoreUint32(&d.fanPercent, fanPercent)
 		atomic.StoreUint32(&d.temperature, temperature)
 		d.fanTempActive = true
+	}
+
+	// Check if temperature target is specified
+	if len(cfg.TempTargetInts) > 0 {
+		// Apply the first setting as a global setting
+		d.tempTarget = cfg.TempTargetInts[0]
+
+		// Override with the per-device setting if it exists
+		for i := range cfg.TempTargetInts {
+			if i == order {
+				d.tempTarget = uint32(cfg.TempTargetInts[order])
+			}
+		}
+		d.fanControlActive = true
+	}
+
+	// validate that we can actually do fan control
+	fanControlNotWorking := false
+	if d.tempTarget > 0 {
+		// validate that fan control is supported
+		if !d.fanControlSupported(d.kind) {
+			return nil, fmt.Errorf("temperature target of %v for device #%v; "+
+				"fan control is not supported on device kind %v", d.tempTarget,
+				index, d.kind)
+		}
+		if !d.fanTempActive {
+			minrLog.Errorf("DEV #%d ignoring temperature target of %v; "+
+				"could not get initial %v read", index, d.tempTarget, d.kind)
+			fanControlNotWorking = true
+		}
+		if fanControlNotWorking {
+			d.tempTarget = 0
+			d.fanControlActive = false
+		}
 	}
 
 	d.started = uint32(time.Now().Unix())

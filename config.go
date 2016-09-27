@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/go-flags"
 	"github.com/decred/dcrutil"
@@ -33,9 +34,11 @@ var (
 	defaultLogDir        = filepath.Join(minerHomeDir, defaultLogDirname)
 	defaultAutocalibrate = 500
 
-	minIntensity = 8
-	maxIntensity = 31
-	maxWorkSize  = uint32(0xFFFFFFFF - 255)
+	minIntensity  = 8
+	maxIntensity  = 31
+	minTempTarget = uint32(60)
+	maxTempTarget = uint32(84)
+	maxWorkSize   = uint32(0xFFFFFFFF - 255)
 )
 
 type config struct {
@@ -43,10 +46,11 @@ type config struct {
 	ShowVersion bool `short:"V" long:"version" description:"Display version information and exit"`
 
 	// Config / log options
-	ConfigFile string `short:"C" long:"configfile" description:"Path to configuration file"`
-	LogDir     string `long:"logdir" description:"Directory to log output."`
-	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
-	ClKernel   string `short:"k" long:"kernel" description:"File with cl kernel to use"`
+	Experimental bool   `long:"experimental" description:"enable EXPERIMENTAL features such as setting a temperature target with (-t/--temptarget) which may DAMAGE YOUR DEVICE(S)."`
+	ConfigFile   string `short:"C" long:"configfile" description:"Path to configuration file"`
+	LogDir       string `long:"logdir" description:"Directory to log output."`
+	DebugLevel   string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
+	ClKernel     string `short:"k" long:"kernel" description:"File with cl kernel to use"`
 
 	// Debugging options
 	Profile    string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
@@ -75,6 +79,8 @@ type config struct {
 	DeviceIDs         []int
 	Intensity         string `short:"i" long:"intensity" description:"Intensities (the work size is 2^intensity) per device. Single global value or a comma separated list."`
 	IntensityInts     []int
+	TempTarget        string `short:"t" long:"temptarget" description:"Target temperature in Celsius to maintain via automatic fan control. (Requires --experimental flag)"`
+	TempTargetInts    []uint32
 	WorkSize          string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity). Single global value or a comma separated list."`
 	WorkSizeInts      []uint32
 
@@ -415,6 +421,68 @@ func loadConfig() (*config, []string, error) {
 			err := fmt.Errorf("Intensity %v not within "+
 				"range %v to %v.", cfg.IntensityInts[i], minIntensity,
 				maxIntensity)
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+	}
+
+	// Check the temptarget if the user is setting that.
+	if len(cfg.TempTarget) > 0 {
+		if !cfg.Experimental {
+			err := fmt.Errorf("temperature targets / automatic fan control " +
+				"is an EXPERIMENTAL feature and requires the --experimental " +
+				"flag to acknowledge that you accept the risk of possibly " +
+				"DAMAGING YOUR DEVICE(S) due to software bugs")
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+		// Parse a list like -t 80,75
+		if strings.Contains(cfg.TempTarget, ",") {
+			specifiedTempTargets := strings.Split(cfg.TempTarget, ",")
+			cfg.TempTargetInts = make([]uint32, len(specifiedTempTargets))
+			for i := range specifiedTempTargets {
+				j, err := strconv.Atoi(specifiedTempTargets[i])
+				if err != nil {
+					err := fmt.Errorf("Could not convert temptarget "+
+						"(%v) to int: %s", specifiedTempTargets[i],
+						err.Error())
+					fmt.Fprintln(os.Stderr, err)
+					return nil, nil, err
+				}
+
+				cfg.TempTargetInts[i] = uint32(j)
+			}
+			// Use specified temptarget like -t 75
+		} else {
+			cfg.TempTargetInts = make([]uint32, 1)
+			i, err := strconv.Atoi(cfg.TempTarget)
+			if err != nil {
+				err := fmt.Errorf("Could not convert temptarget %v "+
+					"to int: %s", cfg.TempTarget, err.Error())
+				fmt.Fprintln(os.Stderr, err)
+				return nil, nil, err
+			}
+
+			cfg.TempTargetInts[0] = uint32(i)
+		}
+	}
+
+	if cfg.Experimental {
+		fmt.Fprintln(os.Stderr, "enabling EXPERIMENTAL features "+
+			"that may possibly DAMAGE YOUR DEVICE(S)")
+		time.Sleep(time.Second * 3)
+	}
+
+	for i := range cfg.TempTargetInts {
+		if cfg.TempTargetInts[i] < minTempTarget {
+			err := fmt.Errorf("Temp target %v is lower than minimum %v",
+				cfg.TempTargetInts[i], minTempTarget)
+			fmt.Fprintln(os.Stderr, err)
+			return nil, nil, err
+		}
+		if cfg.TempTargetInts[i] > maxTempTarget {
+			err := fmt.Errorf("Temp target %v is higher than maximum %v",
+				cfg.TempTargetInts[i], maxTempTarget)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}

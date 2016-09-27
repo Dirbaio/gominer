@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,12 @@ const (
 )
 
 var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
+
+func appendBitfield(info, value cl.CL_bitfield, name string, str *string) {
+	if (info & value) != 0 {
+		*str += name
+	}
+}
 
 func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	var programBuffer [1][]byte
@@ -81,16 +88,21 @@ type Device struct {
 	cuda  bool
 
 	// Items for OpenCL device
-	platformID    cl.CL_platform_id
-	deviceID      cl.CL_device_id
-	deviceName    string
-	context       cl.CL_context
-	queue         cl.CL_command_queue
-	outputBuffer  cl.CL_mem
-	program       cl.CL_program
-	kernel        cl.CL_kernel
-	fanTempActive bool
-	kind          string
+	platformID               cl.CL_platform_id
+	deviceID                 cl.CL_device_id
+	deviceName               string
+	deviceType               string
+	context                  cl.CL_context
+	queue                    cl.CL_command_queue
+	outputBuffer             cl.CL_mem
+	program                  cl.CL_program
+	kernel                   cl.CL_kernel
+	fanControlActive         bool
+	fanControlLastTemp       uint32
+	fanControlLastFanPercent uint32
+	fanTempActive            bool
+	kind                     string
+	tempTarget               uint32
 
 	//cuInput        cu.DevicePtr
 	cuInSize       int64
@@ -125,12 +137,50 @@ type Device struct {
 func deviceStats(index int) (uint32, uint32) {
 	fanPercent := uint32(0)
 	temperature := uint32(0)
-	tempDivisor := uint32(1000)
 
-	fanPercent = adl.DeviceFanPercent(index)
-	temperature = adl.DeviceTemperature(index) / tempDivisor
+	fanPercent = adl.DeviceFanGetPercent(index)
+	temperature = adl.DeviceTemperature(index) / AMDTempDivisor
 
 	return fanPercent, temperature
+}
+
+func fanControlSet(index int, fanCur uint32, tempTargetType string,
+	fanChangeLevel string) {
+	fanAdjustmentPercent := FanControlAdjustmentSmall
+	fanNewPercent := uint32(0)
+	if fanChangeLevel == ChangeLevelLarge {
+		fanAdjustmentPercent = FanControlAdjustmentLarge
+	}
+	minrLog.Tracef("DEV #%d fanControlSet fanCur %v tempTargetType %v "+
+		"fanChangeLevel %v", index, fanCur, tempTargetType, fanChangeLevel)
+
+	switch tempTargetType {
+	// Decrease the temperature by increasing the fan speed
+	case TargetLower:
+		fanNewPercent = fanCur + fanAdjustmentPercent
+		break
+	// Increase the temperature by decreasing the fan speed
+	case TargetHigher:
+		fanNewPercent = fanCur - fanAdjustmentPercent
+		break
+	}
+
+	if fanNewPercent == 0 || fanNewPercent > 100 {
+		fanNewPercent = ADLFanFailSafe
+	}
+
+	minrLog.Tracef("DEV #%d need to %v temperature; adjusting fan from "+
+		"fanCur %v%% to fanNewPercent %v%%", index,
+		strings.ToLower(tempTargetType), fanCur, fanNewPercent)
+	rv := adl.DeviceFanSetPercent(index, fanNewPercent)
+	if rv < 0 {
+		minrLog.Errorf("DEV #%d unable to adjust fan ADL error code: %v", index,
+			rv)
+	} else {
+		minrLog.Infof("DEV #%d successfully adjusted fan from %v%% to %v%% "+
+			"to %v temp", index, fanCur, fanNewPercent,
+			strings.ToLower(tempTargetType))
+	}
 }
 
 func getCLInfo() (cl.CL_platform_id, []cl.CL_device_id, error) {
@@ -209,12 +259,18 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		platformID:  platformID,
 		deviceID:    deviceID,
 		deviceName:  getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"),
-		kind:        "adl",
+		deviceType:  getDeviceInfo(deviceID, cl.CL_DEVICE_TYPE, "CL_DEVICE_TYPE"),
+		kind:        DeviceKindUnknown,
 		quit:        make(chan struct{}),
 		newWork:     make(chan *work.Work, 5),
 		workDone:    workDone,
 		fanPercent:  0,
 		temperature: 0,
+		tempTarget:  0,
+	}
+
+	if d.deviceType == DeviceTypeGPU {
+		d.kind = DeviceKindADL
 	}
 
 	var status cl.CL_int
@@ -348,13 +404,51 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		d.index, globalWorkSize, intensity)
 	d.workSize = globalWorkSize
 
-	fanPercent, temperature := deviceStats(d.index)
-	// Newer cards will idle with the fan off so just check if we got
-	// a good temperature reading
-	if temperature != 0 {
-		atomic.StoreUint32(&d.fanPercent, fanPercent)
-		atomic.StoreUint32(&d.temperature, temperature)
-		d.fanTempActive = true
+	switch d.kind {
+	case DeviceKindADL:
+		fanPercent, temperature := deviceStats(d.index)
+		// Newer cards will idle with the fan off so just check if we got
+		// a good temperature reading
+		if temperature != 0 {
+			atomic.StoreUint32(&d.fanPercent, fanPercent)
+			atomic.StoreUint32(&d.temperature, temperature)
+			d.fanTempActive = true
+		}
+		break
+	}
+
+	// Check if temperature target is specified
+	if len(cfg.TempTargetInts) > 0 {
+		// Apply the first setting as a global setting
+		d.tempTarget = cfg.TempTargetInts[0]
+
+		// Override with the per-device setting if it exists
+		for i := range cfg.TempTargetInts {
+			if i == order {
+				d.tempTarget = uint32(cfg.TempTargetInts[order])
+			}
+		}
+		d.fanControlActive = true
+	}
+
+	// validate that we can actually do fan control
+	fanControlNotWorking := false
+	if d.tempTarget > 0 {
+		// validate that fan control is supported
+		if !d.fanControlSupported(d.kind) {
+			return nil, fmt.Errorf("temperature target of %v for device #%v; "+
+				"fan control is not supported on device kind %v", d.tempTarget,
+				index, d.kind)
+		}
+		if !d.fanTempActive {
+			minrLog.Errorf("DEV #%d ignoring temperature target of %v; "+
+				"could not get initial %v read", index, d.tempTarget, d.kind)
+			fanControlNotWorking = true
+		}
+		if fanControlNotWorking {
+			d.tempTarget = 0
+			d.fanControlActive = false
+		}
 	}
 
 	return d, nil
@@ -539,6 +633,23 @@ func getDeviceInfo(id cl.CL_device_id,
 		return fmt.Sprintf("Failed to find OpenCL device info %s.\n", str)
 	}
 
+	switch name {
+	case cl.CL_DEVICE_TYPE:
+		var deviceTypeStr string
+
+		appendBitfield(cl.CL_bitfield(info.(cl.CL_device_type)),
+			cl.CL_bitfield(cl.CL_DEVICE_TYPE_CPU),
+			DeviceTypeCPU,
+			&deviceTypeStr)
+
+		appendBitfield(cl.CL_bitfield(info.(cl.CL_device_type)),
+			cl.CL_bitfield(cl.CL_DEVICE_TYPE_GPU),
+			DeviceTypeGPU,
+			&deviceTypeStr)
+
+		info = deviceTypeStr
+	}
+
 	strinfo := fmt.Sprintf("%v", info)
 
 	return strinfo
@@ -550,4 +661,5 @@ func (d *Device) Release() {
 	cl.CLReleaseCommandQueue(d.queue)
 	cl.CLReleaseMemObject(d.outputBuffer)
 	cl.CLReleaseContext(d.context)
+	adl.DeviceFanAutoManage(d.index)
 }

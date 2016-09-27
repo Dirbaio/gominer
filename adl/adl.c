@@ -22,6 +22,8 @@ int ADL_Adapter_ID_Get(int iAdapterIndex, int *lpAdapterID);
 int ADL_Adapter_NumberOfAdapters_Get(int *lpNumAdapters);
 int ADL_Main_Control_Create(ADL_MAIN_MALLOC_CALLBACK callback, int iEnumConnectedAdapters);
 int ADL_Overdrive5_FanSpeed_Get(int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
+int ADL_Overdrive5_FanSpeed_Set(int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
+int ADL_Overdrive5_FanSpeedToDefault_Set(int iAdapaterIndex, int iThermalControllerIndex);
 int ADL_Overdrive5_Temperature_Get (int iAdapterIndex, int iThermalControllerIndex, ADLTemperature *lpTemperature);
 
 int getADLInfo(int deviceid, char field[64]);
@@ -50,19 +52,7 @@ static void __stdcall ADL_Main_Memory_Free (void **lpBuffer)
   }
 }
 
-int getADLFanPercent(int deviceid) {
-  int fanPercent = 0;
-  fanPercent = getADLInfo(deviceid, "fanPercent");
-  return fanPercent;
-}
-
-int getADLTemp(int deviceid) {
-  int temp = 0;
-  temp = getADLInfo(deviceid, "temp");
-  return temp;
-}
-
-int getADLInfo(int deviceid, char field[64]) {
+int doADLCommand(int deviceid, char field[64], int arg) {
   int result, i, j, devices = 0, last_adapter = -1, gpu = 0, dummy = 0;
   int iNumberAdapters;
   struct gpu_adapters adapters[MAX_GPUDEVICES], vadapters[MAX_GPUDEVICES];
@@ -98,6 +88,7 @@ int getADLInfo(int deviceid, char field[64]) {
   for (i = 0; i < iNumberAdapters; i++) {
     int iAdapterIndex;
     int lpAdapterID;
+    int rv = 0;
 
     iAdapterIndex = lpInfo[i].iAdapterIndex;
 
@@ -118,7 +109,11 @@ int getADLInfo(int deviceid, char field[64]) {
     adapters[devices].id = i;
 
     if (deviceid == devices) {
-      if (strcmp(field, "fanPercent") == 0) {
+      if (strcmp(field, "fanAutoManage") == 0) {
+        rv = ADL_Overdrive5_FanSpeedToDefault_Set(iAdapterIndex, 0);
+        return rv;
+      }
+      if (strcmp(field, "getFanPercent") == 0) {
         ADLFanSpeedValue lpFanSpeedValue = {0};
         lpFanSpeedValue.iSize = sizeof(ADLFanSpeedValue);
         lpFanSpeedValue.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_PERCENT;
@@ -127,7 +122,16 @@ int getADLInfo(int deviceid, char field[64]) {
         }
         return lpFanSpeedValue.iFanSpeed;
       }
-      if (strcmp(field, "temp") == 0) {
+      if (strcmp(field, "setFanPercent") == 0) {
+        ADLFanSpeedValue lpFanSpeedValue = {0};
+        lpFanSpeedValue.iFanSpeed = arg;
+        lpFanSpeedValue.iFlags |= ADL_DL_FANCTRL_FLAG_USER_DEFINED_SPEED;
+        lpFanSpeedValue.iSize = sizeof(ADLFanSpeedValue);
+        lpFanSpeedValue.iSpeedType = ADL_DL_FANCTRL_SPEED_TYPE_PERCENT;
+        rv = ADL_Overdrive5_FanSpeed_Set(iAdapterIndex, 0, &lpFanSpeedValue);
+        return rv;
+      }
+      if (strcmp(field, "getTemp") == 0) {
         ADLTemperature lpTemperature = {0};
         lpTemperature.iSize = sizeof(ADLTemperature);
         lpTemperature.iTemperature = 0;
@@ -147,4 +151,28 @@ int getADLInfo(int deviceid, char field[64]) {
   }
 
   return 0;
+}
+
+int getADLFanPercent(int deviceid) {
+  int fanPercent = 0;
+  fanPercent = doADLCommand(deviceid, "getFanPercent", 0);
+  return fanPercent;
+}
+
+int getADLTemp(int deviceid) {
+  int temp = 0;
+  temp = doADLCommand(deviceid, "getTemp", 0);
+  return temp;
+}
+
+int setADLFanAutoManage(int deviceid) {
+  int rv = 0;
+  rv = doADLCommand(deviceid, "fanAutoManage", 0);
+  return rv;
+}
+
+int setADLFanPercent(int deviceid, int fanPercent) {
+  int rv = 0;
+  rv = doADLCommand(deviceid, "setFanPercent", fanPercent);
+  return rv;
 }
