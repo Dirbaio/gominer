@@ -23,8 +23,6 @@ import (
 	"github.com/decred/gominer/cl"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
-
-	"golang.org/x/sys/unix"
 )
 
 // Return the GPU library in use.
@@ -65,9 +63,14 @@ func amdgpuFanPercentToValue(percent uint32) uint32 {
 func amdgpuFanPermissionsValid(index int) error {
 	path := amdgpuGetSysfsPath(index, "fan")
 
-	err := unix.Access(path, unix.W_OK)
+	file, err := os.OpenFile(path, os.O_WRONLY, 0666)
+	file.Close()
 	if err != nil {
-		return fmt.Errorf("path %v is not writable", path)
+		if os.IsPermission(err) {
+			return fmt.Errorf("path %v is not writable", path)
+		} else {
+			return fmt.Errorf("path %v unusable %v", path, err)
+		}
 	}
 
 	return nil

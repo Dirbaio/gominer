@@ -1,9 +1,10 @@
 package adl
 
 /*
-// XXX all the C implementations use dlopen()
+// XXX we should really be using dlopen/LoadLibrary like C miners do
 #cgo linux CFLAGS: -DLINUX
 #cgo linux LDFLAGS: -latiadlxx -ldl
+#cgo windows LDFLAGS: -LC:/appsdk/lib/x86_64 -latiadlxx
 #include <stddef.h>
 #include <stdbool.h>
 #include <adl_sdk.h>

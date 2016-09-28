@@ -1,5 +1,5 @@
 hash: a629ff7ac31d9554df88c93ed389d830fda2bb73a5d2c53b73d362dac0538e93
-updated: 2016-09-28T11:19:49.975498348-04:00
+updated: 2016-09-28T14:47:51.839078623-05:00
 imports:
 - name: github.com/btcsuite/btclog
   version: f96df2375f37300305f329b8e5258764b4f19a7f
@@ -49,8 +49,4 @@ imports:
   version: ff7ea4431a97bb2b389739cb9087bbc11faa1fe0
   subpackages:
   - cuda/cu
-- name: golang.org/x/sys
-  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
-  subpackages:
-  - unix
 testImports: []
