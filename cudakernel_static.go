@@ -9,8 +9,9 @@ package main
 */
 import "C"
 import (
-	"github.com/jcvernaleo/3/cuda/cu"
 	"unsafe"
+
+	"github.com/jcvernaleo/3/cuda/cu"
 )
 
 func cudaPrecomputeTable(input *[192]byte) {
