@@ -18,6 +18,7 @@ import (
 )
 
 var chainParams = &chaincfg.MainNetParams
+var deviceLibraryInitialized = false
 
 // Constants for fan and temperature bits
 const (

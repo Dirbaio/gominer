@@ -8,12 +8,22 @@ package adl
 #include <stddef.h>
 #include <stdbool.h>
 #include <adl_sdk.h>
+void init_adl();
+void free_adl();
 int getADLFanPercent(int deviceid);
 int getADLTemp(int deviceid);
 int setADLFanAutoManage(int deviceid);
 int setADLFanPercent(int deviceid, int fanPercent);
 */
 import "C"
+
+func Init() {
+	C.init_adl()
+}
+
+func Release() {
+	C.free_adl()
+}
 
 // DeviceFanGetPercent fetches and returns fan utilization for a device index
 func DeviceFanGetPercent(index int) uint32 {

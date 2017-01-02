@@ -16,11 +16,16 @@
 
 #define MAX_GPUDEVICES 16
 
+static int iNumberAdapters;
+static LPAdapterInfo lpInfo = NULL;
+static bool adl_active = 0;
+
 // declarations in adl_functions.h for these are formatted for dynamic loading
 int ADL_Adapter_AdapterInfo_Get(LPAdapterInfo lpInfo, int iInputSize);
 int ADL_Adapter_ID_Get(int iAdapterIndex, int *lpAdapterID);
 int ADL_Adapter_NumberOfAdapters_Get(int *lpNumAdapters);
 int ADL_Main_Control_Create(ADL_MAIN_MALLOC_CALLBACK callback, int iEnumConnectedAdapters);
+int ADL_Main_Control_Destroy();
 int ADL_Overdrive5_FanSpeed_Get(int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
 int ADL_Overdrive5_FanSpeed_Set(int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
 int ADL_Overdrive5_FanSpeedToDefault_Set(int iAdapaterIndex, int iThermalControllerIndex);
@@ -52,22 +57,17 @@ static void __stdcall ADL_Main_Memory_Free (void **lpBuffer)
   }
 }
 
-int doADLCommand(int deviceid, char field[64], int arg) {
-  int result, i, j, devices = 0, last_adapter = -1, gpu = 0, dummy = 0;
-  int iNumberAdapters;
-  struct gpu_adapters adapters[MAX_GPUDEVICES], vadapters[MAX_GPUDEVICES];
-  bool devs_match = true;
-  ADLBiosInfo BiosInfo;
-  LPAdapterInfo lpInfo = NULL;
+void init_adl() {
+  int result;
 
   if (ADL_OK != ADL_Main_Control_Create(ADL_Main_Memory_Alloc, 1)) {
-    return 0;
+    return;
   }
 
   // Obtain the number of adapters for the system
   result = ADL_Adapter_NumberOfAdapters_Get(&iNumberAdapters);
   if (result != ADL_OK) {
-    return 0;
+    return;
   }
 
   if (iNumberAdapters > 0) {
@@ -78,9 +78,32 @@ int doADLCommand(int deviceid, char field[64], int arg) {
     // Get the AdapterInfo structure for all adapters in the system
     result = ADL_Adapter_AdapterInfo_Get (lpInfo, sizeof (AdapterInfo) * iNumberAdapters);
     if (result != ADL_OK) {
-      return 0;
+      return;
     }
   } else {
+    return;
+  }
+
+  /* Flag adl as active if any card is successfully activated */
+  adl_active = true;
+
+  return;
+}
+
+void free_adl(void)
+{
+  adl_active = false;
+  ADL_Main_Memory_Free((void **)&lpInfo);
+  ADL_Main_Control_Destroy();
+}
+
+int doADLCommand(int deviceid, char field[64], int arg) {
+  int result, i, j, devices = 0, last_adapter = -1, gpu = 0, dummy = 0;
+  struct gpu_adapters adapters[MAX_GPUDEVICES], vadapters[MAX_GPUDEVICES];
+  bool devs_match = true;
+  ADLBiosInfo BiosInfo;
+
+  if (!adl_active) {
     return 0;
   }
 

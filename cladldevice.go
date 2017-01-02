@@ -406,6 +406,10 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 
 	switch d.kind {
 	case DeviceKindADL:
+		if !deviceLibraryInitialized {
+			adl.Init()
+			deviceLibraryInitialized = true
+		}
 		fanPercent, temperature := deviceStats(d.index)
 		// Newer cards will idle with the fan off so just check if we got
 		// a good temperature reading
@@ -662,4 +666,5 @@ func (d *Device) Release() {
 	cl.CLReleaseMemObject(d.outputBuffer)
 	cl.CLReleaseContext(d.context)
 	adl.DeviceFanAutoManage(d.index)
+	adl.Release()
 }

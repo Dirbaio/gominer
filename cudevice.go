@@ -107,12 +107,6 @@ func deviceStats(index int) (uint32, uint32) {
 	fanPercent := uint32(0)
 	temperature := uint32(0)
 
-	err := nvml.Init()
-	if err != nil {
-		minrLog.Errorf("NVML Init error: %v", err)
-		return fanPercent, temperature
-	}
-
 	dh, err := nvml.DeviceGetHandleByIndex(index)
 	if err != nil {
 		minrLog.Errorf("NVML DeviceGetHandleByIndex error: %v", err)
@@ -220,6 +214,14 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 
 	d.cuInSize = 21
 
+	if !deviceLibraryInitialized {
+		err := nvml.Init()
+		if err != nil {
+			minrLog.Errorf("NVML Init error: %v", err)
+		} else {
+			deviceLibraryInitialized = true
+		}
+	}
 	fanPercent, temperature := deviceStats(d.index)
 	// Newer cards will idle with the fan off so just check if we got
 	// a good temperature reading
