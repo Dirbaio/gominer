@@ -948,7 +948,7 @@ func (s *Stratum) PrepWork() error {
 func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
 	log.Debugf("Stratum got valid work to submit %x", data)
 	log.Debugf("Stratum got valid work hash %v",
-		chainhash.HashFuncH(data[0:180]))
+		chainhash.HashH(data[0:180]))
 	data2 := make([]byte, 180)
 	copy(data2, data[0:180])
 

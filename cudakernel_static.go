@@ -11,7 +11,7 @@ import "C"
 import (
 	"unsafe"
 
-	"github.com/jcvernaleo/3/cuda/cu"
+	"github.com/barnex/cuda5/cu"
 )
 
 func cudaPrecomputeTable(input *[192]byte) {

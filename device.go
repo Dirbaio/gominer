@@ -275,11 +275,11 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	binary.BigEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
 	binary.BigEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
 	binary.BigEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
-	hash := chainhash.HashFuncH(data[0:180])
+	hash := chainhash.HashH(data[0:180])
 
 	// Hashes that reach this logic and fail the minimal proof of
 	// work check are considered to be hardware errors.
-	hashNum := blockchain.ShaHashToBig(&hash)
+	hashNum := blockchain.HashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
 		minrLog.Errorf("DEV #%d Hardware error found, hash %v above "+
 			"minimum target %064x", d.index, hash, d.work.Target.Bytes())

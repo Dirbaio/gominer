@@ -7,7 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/jcvernaleo/3/cuda/cu"
+	"github.com/barnex/cuda5/cu"
 )
 
 var (

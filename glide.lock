@@ -1,14 +1,16 @@
-hash: a629ff7ac31d9554df88c93ed389d830fda2bb73a5d2c53b73d362dac0538e93
-updated: 2016-09-28T14:47:51.839078623-05:00
+hash: 599929d61b32132fd7d8f7df51315cf6ecf338f11164419da1038a38415729db
+updated: 2017-02-02T17:01:07.428979394-05:00
 imports:
+- name: github.com/barnex/cuda5
+  version: 57cec7ab46da74b8ca2aa1d41e898c0646081b56
+  subpackages:
+  - cu
 - name: github.com/btcsuite/btclog
-  version: f96df2375f37300305f329b8e5258764b4f19a7f
-- name: github.com/btcsuite/fastsha256
-  version: 302ad4db268b46f9ebda3078f6f7397f96047735
+  version: 73889fb79bd687870312b6e40effcecffbd57d30
 - name: github.com/btcsuite/go-flags
   version: 6c288d648c1cc1befcb90cb5511dcacf64ae8e61
 - name: github.com/btcsuite/go-socks
-  version: cfe8b59e565c1a5bd4e2005d77cd9aa8b2e14524
+  version: 4720035b7bfd2a9bb130b1c184f8bbe41b6f0d0f
   subpackages:
   - socks
 - name: github.com/btcsuite/golangcrypto
@@ -18,35 +20,36 @@ imports:
 - name: github.com/btcsuite/seelog
   version: 313961b101eb55f65ae0f03ddd4e322731763b6c
 - name: github.com/davecgh/go-spew
-  version: 5215b55f46b2b919f50a1df0eaa5886afe4e3b3d
+  version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
   - spew
 - name: github.com/decred/blake256
   version: a840e32d7c31fe2e0218607334cb120a683951a4
 - name: github.com/decred/dcrd
-  version: 83110a26ab1c9c7caa2bcdac9d4e1c5fc3192e1d
+  version: 0b13650eb3178be7241814b2360200012258b411
   subpackages:
   - blockchain
-  - chaincfg
-  - chaincfg/chainhash
-  - wire
+  - blockchain/internal/dbnamespace
+  - blockchain/internal/progresslog
   - blockchain/stake
-  - database
-  - txscript
+  - blockchain/stake/internal/dbnamespace
+  - blockchain/stake/internal/ticketdb
+  - blockchain/stake/internal/tickettreap
+  - chaincfg
   - chaincfg/chainec
+  - chaincfg/chainhash
+  - database
   - dcrec/edwards
   - dcrec/secp256k1
   - dcrec/secp256k1/schnorr
+  - txscript
+  - wire
 - name: github.com/decred/dcrutil
-  version: 4a3bdb1cb08b49811674750998363b8b8ccfd66e
+  version: ba0a5f399a43abc0e1a0a0442509c36f35321bce
   subpackages:
   - base58
 - name: github.com/decred/ed25519
   version: b0909d3f798b97a03c9e77023f97a5301a2a7900
   subpackages:
   - edwards25519
-- name: github.com/jcvernaleo/3
-  version: ff7ea4431a97bb2b389739cb9087bbc11faa1fe0
-  subpackages:
-  - cuda/cu
 testImports: []

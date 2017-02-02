@@ -19,7 +19,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/jcvernaleo/3/cuda/cu"
+	"github.com/barnex/cuda5/cu"
 
 	"github.com/decred/gominer/nvml"
 	"github.com/decred/gominer/util"
