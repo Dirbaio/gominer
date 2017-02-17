@@ -63,11 +63,13 @@ func DiffToTarget(diff float64, powLimit *big.Int) (*big.Int, error) {
 			"zero passed)", diff)
 	}
 
-	if math.Floor(diff) < diff {
-		return nil, fmt.Errorf("invalid pool difficulty %v (not a whole "+
-			"number)", diff)
+	// Round down in the case of a non-integer diff since we only support
+	// ints (unless diff < 1 since we don't allow 0)..
+	if diff < 1 {
+		diff = 1
+	} else {
+		diff = math.Floor(diff)
 	}
-
 	divisor := new(big.Int).SetInt64(int64(diff))
 	max := powLimit
 	target := new(big.Int)
