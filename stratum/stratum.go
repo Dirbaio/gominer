@@ -578,6 +578,10 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 			return nil, err
 		}
 
+		if len(resJS) == 0 {
+			return nil, errJsonType
+		}
+
 		var msgPeak []interface{}
 		err = json.Unmarshal(resJS[0], &msgPeak)
 		if err != nil {
