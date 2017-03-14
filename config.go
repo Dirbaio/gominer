@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -271,7 +272,7 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	if preCfg.ShowVersion {
-		fmt.Println(appName, gpuLib(), "version", version())
+		fmt.Printf("%s %s version %s (Go version %s)\n", appName, gpuLib(), version(), runtime.Version())
 		os.Exit(0)
 	}
 

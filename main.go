@@ -25,7 +25,8 @@ func gominerMain() error {
 	defer backendLog.Flush()
 
 	// Show version at startup.
-	mainLog.Infof("Version %s %s", version(), gpuLib())
+	mainLog.Infof("Version %s %s (Go version %s)",
+		version(), gpuLib(), runtime.Version())
 
 	// Enable http profiling server if requested.
 	if cfg.Profile != "" {
