@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 #include <memory.h>
-#include <miner.h>
+#include "miner.h"
 
 #if defined(_WIN32)
 #define DLLEXPORT __declspec(dllexport)
@@ -21,7 +21,7 @@
 #endif /* _WIN32 */
 
 extern "C" {
-#include <sph/sph_blake.h>
+#include "sph/sph_blake.h"
 }
 
 /* threads per block */
@@ -42,7 +42,7 @@ extern "C" void decred_hash(void *output, const void *input)
 	sph_blake256_close(&ctx, output);
 }
 
-#include <cuda_helper.h>
+#include "cuda_helper.h"
 
 #ifdef __INTELLISENSE__
 #define __byte_perm(x, y, b) x
