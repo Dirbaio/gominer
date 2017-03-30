@@ -93,7 +93,7 @@ go build -tags opencladl
   * Compilation will most likely fail which can be safely ignored for now.
 - Change to the gominer directory
   * If using the Windows Command Prompt:
-  ```cd %GOPATH%/src/github.com/decred/gominer``` or if using git-bash ```cd $GOPATH%/src/github.com/decred/gominer```
+  ```cd %GOPATH%/src/github.com/decred/gominer``` or if using git-bash ```cd $GOPATH/src/github.com/decred/gominer```
 - Install dependencies via glide
   * ```glide install```
 
