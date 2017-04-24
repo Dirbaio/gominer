@@ -437,7 +437,7 @@ func (s *Stratum) Auth() error {
 		Params: []string{s.cfg.User, s.cfg.Pass},
 	}
 	// Auth reply has no method so need a way to identify it.
-	// Ugly, but not much choise.
+	// Ugly, but not much choice.
 	id, ok := msg.ID.(uint64)
 	if !ok {
 		return errJsonType
@@ -851,8 +851,11 @@ func (s *Stratum) PrepWork() error {
 		log.Error("Error decoding Coinbase pt 1.")
 		return err
 	}
-
-	// cb2 is never actually sent, so don't try to decode it.
+	cb2, err := hex.DecodeString(s.PoolWork.CB2)
+	if err != nil {
+		log.Errorf("Error decoding Coinbase pt 2.")
+		return err
+	}
 
 	// Generate current ntime.
 	ntime := time.Now().Unix() + s.PoolWork.NtimeDelta
@@ -911,6 +914,8 @@ func (s *Stratum) PrepWork() error {
 	copy(workdata[workPosition:], cb1[0:108])
 	workPosition += 108
 	copy(workdata[workPosition:], extraNonce)
+	workPosition = 176
+	copy(workdata[workPosition:], cb2)
 
 	var randomBytes = make([]byte, 4)
 	_, err = rand.Read(randomBytes)
