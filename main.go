@@ -22,7 +22,11 @@ func gominerMain() error {
 		return err
 	}
 	cfg = tcfg
-	defer backendLog.Flush()
+	defer func() {
+		if logRotator != nil {
+			logRotator.Close()
+		}
+	}()
 
 	// Show version at startup.
 	mainLog.Infof("Version %s %s (Go version %s)",
@@ -40,7 +44,6 @@ func gominerMain() error {
 			err := http.ListenAndServe(listenAddr, nil)
 			if err != nil {
 				mainLog.Errorf("Unable to create profiler: %v", err)
-				backendLog.Flush()
 				os.Exit(1)
 			}
 		}()

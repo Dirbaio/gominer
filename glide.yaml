@@ -5,7 +5,6 @@ import:
 - package: github.com/btcsuite/go-socks
   subpackages:
   - socks
-- package: github.com/btcsuite/seelog
 - package: github.com/davecgh/go-spew
   subpackages:
   - spew

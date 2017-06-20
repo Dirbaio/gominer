@@ -1,24 +1,22 @@
 hash: 599929d61b32132fd7d8f7df51315cf6ecf338f11164419da1038a38415729db
-updated: 2017-02-02T17:01:07.428979394-05:00
+updated: 2017-06-20T13:48:20.402787267-04:00
 imports:
+- name: github.com/agl/ed25519
+  version: 278e1ec8e8a6e017cd07577924d6766039146ced
+  subpackages:
+  - edwards25519
 - name: github.com/barnex/cuda5
   version: 57cec7ab46da74b8ca2aa1d41e898c0646081b56
   subpackages:
   - cu
 - name: github.com/btcsuite/btclog
-  version: 73889fb79bd687870312b6e40effcecffbd57d30
+  version: 30bef3d5a6b4600e2129de8b6527ffcc1ee397ca
 - name: github.com/btcsuite/go-flags
   version: 6c288d648c1cc1befcb90cb5511dcacf64ae8e61
 - name: github.com/btcsuite/go-socks
   version: 4720035b7bfd2a9bb130b1c184f8bbe41b6f0d0f
   subpackages:
   - socks
-- name: github.com/btcsuite/golangcrypto
-  version: 53f62d9b43e87a6c56975cf862af7edf33a8d0df
-  subpackages:
-  - ripemd160
-- name: github.com/btcsuite/seelog
-  version: 313961b101eb55f65ae0f03ddd4e322731763b6c
 - name: github.com/davecgh/go-spew
   version: 346938d642f2ec3594ed81d874461961cd0faa76
   subpackages:
@@ -26,7 +24,7 @@ imports:
 - name: github.com/decred/blake256
   version: a840e32d7c31fe2e0218607334cb120a683951a4
 - name: github.com/decred/dcrd
-  version: 0b13650eb3178be7241814b2360200012258b411
+  version: ce4b77d3d9e3a4d3393e1fa3baeee5679cad518d
   subpackages:
   - blockchain
   - blockchain/internal/dbnamespace
@@ -45,11 +43,15 @@ imports:
   - txscript
   - wire
 - name: github.com/decred/dcrutil
-  version: ba0a5f399a43abc0e1a0a0442509c36f35321bce
+  version: a5fab53cab39b793142c8453caa4c6f83bc152d4
   subpackages:
   - base58
-- name: github.com/decred/ed25519
-  version: b0909d3f798b97a03c9e77023f97a5301a2a7900
+- name: github.com/jrick/logrotate
+  version: 4ed05ed86ef17d10ff99cce77481e0fcf6f2c7b0
   subpackages:
-  - edwards25519
+  - rotator
+- name: golang.org/x/crypto
+  version: adbae1b6b6fb4b02448a0fc0dbbc9ba2b95b294d
+  subpackages:
+  - ripemd160
 testImports: []
