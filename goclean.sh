@@ -10,11 +10,8 @@
 set -ex
 
 # Automatic checks
-test -z "$(gometalinter --disable-all \
+test -z "$(gometalinter --vendor --disable-all \
 --enable=gofmt \
 --enable=vet \
 --enable=goimports \
---deadline=45s $(glide novendor) | tee /dev/stderr)"
-test -z "$(go fmt $(glide novendor) | tee /dev/stderr)"
-test -z "$(go vet $(glide novendor) 2>&1 | tee /dev/stderr)"
-
+--deadline=10m ./... | tee /dev/stderr)"

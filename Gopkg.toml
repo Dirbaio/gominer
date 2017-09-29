@@ -1,0 +1,28 @@
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/barnex/cuda5"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/btcsuite/btclog"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/btcsuite/go-flags"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/btcsuite/go-socks"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/davecgh/go-spew"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/decred/dcrd"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/decred/dcrutil"
