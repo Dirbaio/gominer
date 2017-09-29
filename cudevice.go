@@ -347,9 +347,9 @@ func (d *Device) runDevice() error {
 		startNonce := d.lastBlock[work.Nonce1Word]
 
 		throughput := uint32(0x20000000)
-		gridx := ((throughput - 1) / 640)
+		//gridx := ((throughput - 1) / 640)
 
-		gridx = 52428 // like ccminer
+		gridx := uint32(52428) // like ccminer
 
 		targetHigh := ^uint32(0)
 

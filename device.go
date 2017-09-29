@@ -103,19 +103,19 @@ func (d *Device) Run() {
 func (d *Device) fanControl() {
 	d.Lock()
 	defer d.Unlock()
-	fanChange := 0
-	fanChangeLevel := ""
-	fanIntent := ""
+	var fanChangeLevel, fanIntent string
+	var fanChange uint32
 	fanLast := d.fanControlLastFanPercent
-	tempChange := 0
-	tempChangeLevel := ""
-	tempDirection := ""
+
+	var tempChange uint32
+	var tempChangeLevel, tempDirection string
+	var tempSeverity, tempTargetType string
+
+	var firstRun bool
+
 	tempLast := d.fanControlLastTemp
 	tempMinAllowed := d.tempTarget - FanControlHysteresis
 	tempMaxAllowed := d.tempTarget + FanControlHysteresis
-	tempSeverity := ""
-	tempTargetType := ""
-	firstRun := false
 
 	// Save the values we read for the next time the loop is run
 	fanCur := atomic.LoadUint32(&d.fanPercent)
@@ -160,12 +160,12 @@ func (d *Device) fanControl() {
 
 	// we increased the fan to lower the device temperature last time
 	if fanLast < fanCur {
-		fanChange = int(fanCur) - int(fanLast)
+		fanChange = fanCur - fanLast
 		fanIntent = TargetHigher
 	}
 	// we decreased the fan to raise the device temperature last time
 	if fanLast > fanCur {
-		fanChange = int(fanLast) - int(fanCur)
+		fanChange = fanLast - fanCur
 		fanIntent = TargetLower
 	}
 	// we didn't make any changes
@@ -175,16 +175,16 @@ func (d *Device) fanControl() {
 
 	if fanChange == 0 {
 		fanChangeLevel = ChangeLevelNone
-	} else if fanChange == int(FanControlAdjustmentSmall) {
+	} else if fanChange == FanControlAdjustmentSmall {
 		fanChangeLevel = ChangeLevelSmall
-	} else if fanChange == int(FanControlAdjustmentLarge) {
+	} else if fanChange == FanControlAdjustmentLarge {
 		fanChangeLevel = ChangeLevelLarge
 	} else {
 		// XXX Seems the AMDGPU driver may not support all values or
 		// changes values underneath us
 		minrLog.Tracef("DEV #%d fan changed by an unexpected value %v", d.index,
 			fanChange)
-		if fanChange < int(FanControlAdjustmentSmall) {
+		if fanChange < FanControlAdjustmentSmall {
 			fanChangeLevel = ChangeLevelSmall
 		} else {
 			fanChangeLevel = ChangeLevelLarge
@@ -192,11 +192,11 @@ func (d *Device) fanControl() {
 	}
 
 	if tempLast < tempCur {
-		tempChange = int(tempCur) - int(tempLast)
+		tempChange = tempCur - tempLast
 		tempDirection = "Up"
 	}
 	if tempLast > tempCur {
-		tempChange = int(tempLast) - int(tempCur)
+		tempChange = tempLast - tempCur
 		tempDirection = "Down"
 	}
 	if tempLast == tempCur {
@@ -205,7 +205,7 @@ func (d *Device) fanControl() {
 
 	if tempChange == 0 {
 		tempChangeLevel = ChangeLevelNone
-	} else if tempChange > int(FanControlHysteresis) {
+	} else if tempChange > FanControlHysteresis {
 		tempChangeLevel = ChangeLevelLarge
 	} else {
 		tempChangeLevel = ChangeLevelSmall

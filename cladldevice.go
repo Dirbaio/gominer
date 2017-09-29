@@ -135,11 +135,8 @@ type Device struct {
 }
 
 func deviceStats(index int) (uint32, uint32) {
-	fanPercent := uint32(0)
-	temperature := uint32(0)
-
-	fanPercent = adl.DeviceFanGetPercent(index)
-	temperature = adl.DeviceTemperature(index) / AMDTempDivisor
+	fanPercent := adl.DeviceFanGetPercent(index)
+	temperature := adl.DeviceTemperature(index) / AMDTempDivisor
 
 	return fanPercent, temperature
 }

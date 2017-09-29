@@ -27,9 +27,7 @@ func Release() {
 
 // DeviceFanGetPercent fetches and returns fan utilization for a device index
 func DeviceFanGetPercent(index int) uint32 {
-	fanPercent := uint32(0)
-
-	fanPercent = uint32(C.getADLFanPercent(C.int(index)))
+	fanPercent := uint32(C.getADLFanPercent(C.int(index)))
 
 	return fanPercent
 }
@@ -42,9 +40,7 @@ func DeviceFanSetPercent(index int, fanPercent uint32) int {
 
 // DeviceTemperature fetches and returns temperature for a device index
 func DeviceTemperature(index int) uint32 {
-	temperature := uint32(0)
-
-	temperature = uint32(C.getADLTemp(C.int(index)))
+	temperature := uint32(C.getADLTemp(C.int(index)))
 
 	return temperature
 }

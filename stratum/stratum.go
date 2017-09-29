@@ -923,7 +923,6 @@ func (s *Stratum) PrepWork() error {
 		log.Errorf("Unable to generate random bytes")
 		return err
 	}
-	workPosition += 4
 
 	var workData [192]byte
 	copy(workData[:], workdata[:])

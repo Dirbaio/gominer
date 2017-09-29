@@ -282,13 +282,10 @@ func determineDeviceKind(index int, deviceType string) string {
 }
 
 func deviceStats(index int) (uint32, uint32) {
-	fanPercent := uint32(0)
-	temperature := uint32(0)
-
-	fanPercent = deviceStatsReadSysfsEntry(amdgpuGetSysfsPath(index, "fan"))
+	fanPercent := deviceStatsReadSysfsEntry(amdgpuGetSysfsPath(index, "fan"))
 	fanPercentFloat := float64(fanPercent) / float64(AMDGPUFanMax) * float64(100)
 	fanPercent = uint32(fanPercentFloat)
-	temperature = deviceStatsReadSysfsEntry(amdgpuGetSysfsPath(index, "temp")) / AMDTempDivisor
+	temperature := deviceStatsReadSysfsEntry(amdgpuGetSysfsPath(index, "temp")) / AMDTempDivisor
 
 	return fanPercent, temperature
 }
