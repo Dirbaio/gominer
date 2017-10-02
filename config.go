@@ -28,13 +28,18 @@ const (
 )
 
 var (
-	minerHomeDir         = dcrutil.AppDataDir("gominer", false)
-	dcrdHomeDir          = dcrutil.AppDataDir("dcrd", false)
-	defaultConfigFile    = filepath.Join(minerHomeDir, defaultConfigFilename)
-	defaultRPCServer     = "localhost"
-	defaultRPCCertFile   = filepath.Join(dcrdHomeDir, "rpc.cert")
-	defaultLogDir        = filepath.Join(minerHomeDir, defaultLogDirname)
-	defaultAutocalibrate = 500
+	minerHomeDir          = dcrutil.AppDataDir("gominer", false)
+	dcrdHomeDir           = dcrutil.AppDataDir("dcrd", false)
+	defaultConfigFile     = filepath.Join(minerHomeDir, defaultConfigFilename)
+	defaultRPCServer      = "localhost"
+	defaultRPCCertFile    = filepath.Join(dcrdHomeDir, "rpc.cert")
+	defaultRPCPortMainNet = "9109"
+	defaultRPCPortTestNet = "19109"
+	defaultRPCPortSimNet  = "19556"
+	defaultAPIHost        = "localhost"
+	defaultAPIPort        = "3333"
+	defaultLogDir         = filepath.Join(minerHomeDir, defaultLogDirname)
+	defaultAutocalibrate  = 500
 
 	minIntensity  = 8
 	maxIntensity  = 31
@@ -58,6 +63,9 @@ type config struct {
 	Profile    string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
 	CPUProfile string `long:"cpuprofile" description:"Write CPU profile to the specified file"`
 	MemProfile string `long:"memprofile" description:"Write mem profile to the specified file"`
+
+	// Status API options
+	APIListeners []string `long:"apilisten" description:"Add an interface/port to expose miner status API"`
 
 	// RPC connection options
 	RPCUser     string `short:"u" long:"rpcuser" description:"RPC username"`
@@ -92,24 +100,38 @@ type config struct {
 	PoolPassword string `short:"n" long:"poolpass" default-mask:"-" description:"Pool password"`
 }
 
+// removeDuplicateAddresses returns a new slice with all duplicate entries in
+// addrs removed.
+func removeDuplicateAddresses(addrs []string) []string {
+	result := make([]string, 0, len(addrs))
+	seen := map[string]struct{}{}
+	for _, val := range addrs {
+		if _, ok := seen[val]; !ok {
+			result = append(result, val)
+			seen[val] = struct{}{}
+		}
+	}
+	return result
+}
+
 // normalizeAddress returns addr with the passed default port appended if
 // there is not already a port specified.
-func normalizeAddress(addr string, useTestNet, useSimNet bool) string {
+func normalizeAddress(addr string, defaultPort string) string {
 	_, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		var defaultPort string
-		switch {
-		case useTestNet:
-			defaultPort = "19109"
-		case useSimNet:
-			defaultPort = "19556"
-		default:
-			defaultPort = "9109"
-		}
-
 		return net.JoinHostPort(addr, defaultPort)
 	}
 	return addr
+}
+
+// normalizeAddresses returns a new slice with all the passed peer addresses
+// normalized with the given default port, and all duplicates removed.
+func normalizeAddresses(addrs []string, defaultPort string) []string {
+	for i, addr := range addrs {
+		addrs[i] = normalizeAddress(addr, defaultPort)
+	}
+
+	return removeDuplicateAddresses(addrs)
 }
 
 // filesExists reports whether the named file or directory exists.
@@ -549,13 +571,26 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
+	if len(cfg.APIListeners) != 0 {
+		cfg.APIListeners = normalizeAddresses(cfg.APIListeners, defaultAPIPort)
+	}
+
 	// Handle environment variable expansion in the RPC certificate path.
 	cfg.RPCCert = cleanAndExpandPath(cfg.RPCCert)
 
+	var defaultRPCPort string
+	switch {
+	case cfg.TestNet:
+		defaultRPCPort = defaultRPCPortTestNet
+	case cfg.SimNet:
+		defaultRPCPort = defaultRPCPortSimNet
+	default:
+		defaultRPCPort = defaultRPCPortMainNet
+	}
+
 	// Add default port to RPC server based on --testnet flag
 	// if needed.
-	cfg.RPCServer = normalizeAddress(cfg.RPCServer, cfg.TestNet,
-		cfg.SimNet)
+	cfg.RPCServer = normalizeAddress(cfg.RPCServer, defaultRPCPort)
 
 	// Warn about missing config file only after all other configuration is
 	// done.  This prevents the warning on help messages and invalid

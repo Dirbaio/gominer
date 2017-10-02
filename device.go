@@ -317,15 +317,10 @@ func (d *Device) PrintStats() {
 		return
 	}
 
-	diffOneShareHashesAvg := uint64(0x00000000FFFFFFFF)
 	d.Lock()
 	defer d.Unlock()
-	averageHashRate := (float64(diffOneShareHashesAvg) *
-		float64(d.allDiffOneShares)) /
-		float64(secondsElapsed)
 
-	fanPercent := atomic.LoadUint32(&d.fanPercent)
-	temperature := atomic.LoadUint32(&d.temperature)
+	averageHashRate, fanPercent, temperature := d.Status()
 
 	if fanPercent != 0 || temperature != 0 {
 		minrLog.Infof("DEV #%d (%s) %v Fan=%v%% T=%vC",
@@ -359,4 +354,18 @@ func (d *Device) UpdateFanTemp() {
 			break
 		}
 	}
+}
+
+func (d *Device) Status() (float64, uint32, uint32) {
+	secondsElapsed := uint32(time.Now().Unix()) - d.started
+	diffOneShareHashesAvg := uint64(0x00000000FFFFFFFF)
+
+	averageHashRate := (float64(diffOneShareHashesAvg) *
+		float64(d.allDiffOneShares)) /
+		float64(secondsElapsed)
+
+	fanPercent := atomic.LoadUint32(&d.fanPercent)
+	temperature := atomic.LoadUint32(&d.temperature)
+
+	return averageHashRate, fanPercent, temperature
 }

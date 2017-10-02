@@ -158,11 +158,9 @@ func (m *Miner) printStatsThread() {
 
 	for {
 		if !cfg.Benchmark {
+			valid, rejected, stale, total, utility := m.Status()
+
 			if cfg.Pool != "" {
-				valid := atomic.LoadUint64(&m.pool.ValidShares)
-				rejected := atomic.LoadUint64(&m.pool.InvalidShares)
-				stale := atomic.LoadUint64(&m.staleShares)
-				total := valid + rejected + stale
 				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v, Total: %v",
 					valid,
 					rejected,
@@ -171,13 +169,9 @@ func (m *Miner) printStatsThread() {
 				)
 				secondsElapsed := uint32(time.Now().Unix()) - m.started
 				if (secondsElapsed / 60) > 0 {
-					utility := float64(valid) / (float64(secondsElapsed) / float64(60))
 					minrLog.Infof("Global utility (accepted shares/min): %v", utility)
 				}
 			} else {
-				valid := atomic.LoadUint64(&m.validShares)
-				rejected := atomic.LoadUint64(&m.invalidShares)
-				total := valid + rejected
 				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Total: %v",
 					valid,
 					rejected,
@@ -240,4 +234,24 @@ func (m *Miner) Stop() {
 	for _, d := range m.devices {
 		d.Stop()
 	}
+}
+
+func (m *Miner) Status() (uint64, uint64, uint64, uint64, float64) {
+	if cfg.Pool != "" {
+		valid := atomic.LoadUint64(&m.pool.ValidShares)
+		rejected := atomic.LoadUint64(&m.pool.InvalidShares)
+		stale := atomic.LoadUint64(&m.staleShares)
+		total := valid + rejected + stale
+
+		secondsElapsed := uint32(time.Now().Unix()) - m.started
+		utility := float64(valid) / (float64(secondsElapsed) / float64(60))
+
+		return valid, rejected, stale, total, utility
+	}
+
+	valid := atomic.LoadUint64(&m.validShares)
+	rejected := atomic.LoadUint64(&m.invalidShares)
+	total := valid + rejected
+
+	return valid, rejected, 0, total, 0
 }

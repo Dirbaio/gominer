@@ -82,6 +82,10 @@ func gominerMain() error {
 		return err
 	}
 
+	if len(cfg.APIListeners) != 0 {
+		go RunMonitor(m)
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {

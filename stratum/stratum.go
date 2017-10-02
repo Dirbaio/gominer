@@ -57,6 +57,8 @@ type Stratum struct {
 	Diff      float64
 	Target    *big.Int
 	PoolWork  NotifyWork
+
+	Started uint32
 }
 
 // Config holdes the config options that may be used by a stratum pool.
@@ -234,6 +236,8 @@ func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string) 
 		return nil, err
 	}
 
+	stratum.Started = uint32(time.Now().Unix())
+
 	return &stratum, nil
 }
 
@@ -267,6 +271,10 @@ func (s *Stratum) Reconnect() error {
 	if err != nil {
 		return nil
 	}
+
+	// If we were able to reconnect, restart counter
+	s.Started = uint32(time.Now().Unix())
+
 	return nil
 }
 
