@@ -98,12 +98,12 @@ well.
 To download and build gominer, run:
 
 ```
-go get -u github.com/Masterminds/glide
+go get -u github.com/golang/dep/cmd/dep
 mkdir -p $GOPATH/src/github.com/decred
 cd $GOPATH/src/github.com/decred
 git clone  https://github.com/decred/gominer.git
 cd gominer
-glide install
+dep ensure
 ```
 
 For CUDA with NVIDIA Management Library (NVML) support:
@@ -135,8 +135,8 @@ go build -tags opencladl
   * This should have been done by the Go installer
 - Add the following locations to your PATH: `C:\Users\username\go\bin;C:\Go\bin`
 - Add `C:\Program Files\mingw-w64\x84_64-6.2.0-posix-seh-rt_v5-rev1\mingw64\bin` to your PATH (This is the latest release as of 2016-09-29)
-- `go get github.com/Masterminds/glide`
-  * You should be able to type ```glide``` and get glide's usage display.  If not, double check the steps above
+- `go get github.com/golang/dep/cmd/dep`
+  * You should be able to type ```dep``` and get dep's usage display.  If not, double check the steps above
 - `go get github.com/decred/gominer`
   * Compilation will most likely fail which can be safely ignored for now.
 - Change to the gominer directory
@@ -144,8 +144,8 @@ go build -tags opencladl
   ```cd %GOPATH%/src/github.com/decred/gominer```
   * If using git-bash
   ```cd $GOPATH/src/github.com/decred/gominer```
-- Install dependencies via glide
-  * ```glide install```
+- Install dependencies via dep
+  * ```dep ensure```
 
 #### Build Instructions
 
