@@ -2,9 +2,10 @@
 
 
 [[projects]]
+  branch = "master"
   name = "github.com/agl/ed25519"
   packages = [".","edwards25519"]
-  revision = "278e1ec8e8a6e017cd07577924d6766039146ced"
+  revision = "5312a61534124124185d41f09206b9fef1d88403"
 
 [[projects]]
   branch = "master"
@@ -44,15 +45,15 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/decred/dcrd"
-  packages = ["blockchain","blockchain/internal/dbnamespace","blockchain/internal/progresslog","blockchain/stake","blockchain/stake/internal/dbnamespace","blockchain/stake/internal/ticketdb","blockchain/stake/internal/tickettreap","chaincfg","chaincfg/chainec","chaincfg/chainhash","database","dcrec/edwards","dcrec/secp256k1","dcrec/secp256k1/schnorr","txscript","wire"]
-  revision = "f11fac8134626768ef7b1f278fd4331f004bfb49"
+  name = "github.com/decred/base58"
+  packages = ["."]
+  revision = "b3520e187fa8ebe65eb74245408cf4b83e6a65d3"
 
 [[projects]]
   branch = "master"
-  name = "github.com/decred/dcrutil"
-  packages = [".","base58"]
-  revision = "ddbde93f65ab0692e54ed8a5ad325fa2e8af4daa"
+  name = "github.com/decred/dcrd"
+  packages = ["blockchain","blockchain/internal/dbnamespace","blockchain/internal/progresslog","blockchain/stake","blockchain/stake/internal/dbnamespace","blockchain/stake/internal/ticketdb","blockchain/stake/internal/tickettreap","chaincfg","chaincfg/chainec","chaincfg/chainhash","database","dcrec/edwards","dcrec/secp256k1","dcrec/secp256k1/schnorr","dcrutil","txscript","wire"]
+  revision = "f903c700a41a80f59daf21fa8489a437485dcfdb"
 
 [[projects]]
   name = "github.com/jrick/logrotate"
@@ -60,13 +61,14 @@
   revision = "4ed05ed86ef17d10ff99cce77481e0fcf6f2c7b0"
 
 [[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ripemd160"]
-  revision = "adbae1b6b6fb4b02448a0fc0dbbc9ba2b95b294d"
+  revision = "9419663f5a44be8b34ca85f08abc5fe1be11f8a3"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4919571b7c7b0f4116ae50ef832452943d99856b0f19a2577f89d4033e305825"
+  inputs-digest = "ca865d509ef76e69617ba986312229371b896b2822a4aee9c5010c0c19149b7a"
   solver-name = "gps-cdcl"
   solver-version = 1
