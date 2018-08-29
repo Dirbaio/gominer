@@ -8,13 +8,13 @@
     ".",
     "edwards25519"
   ]
-  revision = "278e1ec8e8a6e017cd07577924d6766039146ced"
+  revision = "5312a61534124124185d41f09206b9fef1d88403"
 
 [[projects]]
   branch = "master"
   name = "github.com/barnex/cuda5"
   packages = ["cu"]
-  revision = "57cec7ab46da74b8ca2aa1d41e898c0646081b56"
+  revision = "da30a9b287d8f7ad210d42d911e33ef5c511544b"
 
 [[projects]]
   branch = "master"
@@ -29,16 +29,16 @@
   revision = "4720035b7bfd2a9bb130b1c184f8bbe41b6f0d0f"
 
 [[projects]]
-  branch = "master"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
-  revision = "a476722483882dd40b8111f0eb64e1d7f43f56e4"
+  revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
+  version = "v1.1.1"
 
 [[projects]]
-  branch = "master"
   name = "github.com/dchest/blake256"
   packages = ["."]
   revision = "dee3fe6eb0e98dc774a94fc231f85baf7c29d360"
+  version = "v1.0.0"
 
 [[projects]]
   name = "github.com/decred/base58"
@@ -81,13 +81,14 @@
 [[projects]]
   name = "github.com/jrick/logrotate"
   packages = ["rotator"]
-  revision = "4ed05ed86ef17d10ff99cce77481e0fcf6f2c7b0"
+  revision = "a93b200c26cbae3bb09dd0dc2c7c7fe1468a034a"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ripemd160"]
-  revision = "9419663f5a44be8b34ca85f08abc5fe1be11f8a3"
+  revision = "614d502a4dac94afa3a6ce146bd1736da82514c6"
 
 [solve-meta]
   analyzer-name = "dep"

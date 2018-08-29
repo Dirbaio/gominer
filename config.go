@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/go-flags"
+	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/slog"
 )
@@ -582,8 +583,10 @@ func loadConfig() (*config, []string, error) {
 	switch {
 	case cfg.TestNet:
 		defaultRPCPort = defaultRPCPortTestNet
+		chainParams = &chaincfg.TestNet3Params
 	case cfg.SimNet:
 		defaultRPCPort = defaultRPCPortSimNet
+		chainParams = &chaincfg.SimNetParams
 	default:
 		defaultRPCPort = defaultRPCPortMainNet
 	}
