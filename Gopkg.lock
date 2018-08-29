@@ -4,20 +4,17 @@
 [[projects]]
   branch = "master"
   name = "github.com/agl/ed25519"
-  packages = [".","edwards25519"]
-  revision = "5312a61534124124185d41f09206b9fef1d88403"
+  packages = [
+    ".",
+    "edwards25519"
+  ]
+  revision = "278e1ec8e8a6e017cd07577924d6766039146ced"
 
 [[projects]]
   branch = "master"
   name = "github.com/barnex/cuda5"
   packages = ["cu"]
   revision = "57cec7ab46da74b8ca2aa1d41e898c0646081b56"
-
-[[projects]]
-  branch = "master"
-  name = "github.com/btcsuite/btclog"
-  packages = ["."]
-  revision = "84c8d2346e9fc8c7b947e243b9c24e6df9fd206a"
 
 [[projects]]
   branch = "master"
@@ -44,16 +41,42 @@
   revision = "dee3fe6eb0e98dc774a94fc231f85baf7c29d360"
 
 [[projects]]
-  branch = "master"
   name = "github.com/decred/base58"
   packages = ["."]
-  revision = "b3520e187fa8ebe65eb74245408cf4b83e6a65d3"
+  revision = "56c501706f00d9e1cfacee19a27117e12da24734"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
   name = "github.com/decred/dcrd"
-  packages = ["blockchain","blockchain/internal/dbnamespace","blockchain/internal/progresslog","blockchain/stake","blockchain/stake/internal/dbnamespace","blockchain/stake/internal/ticketdb","blockchain/stake/internal/tickettreap","chaincfg","chaincfg/chainec","chaincfg/chainhash","database","dcrec/edwards","dcrec/secp256k1","dcrec/secp256k1/schnorr","dcrutil","txscript","wire"]
-  revision = "f903c700a41a80f59daf21fa8489a437485dcfdb"
+  packages = [
+    "blockchain",
+    "blockchain/internal/dbnamespace",
+    "blockchain/internal/progresslog",
+    "blockchain/stake",
+    "blockchain/stake/internal/dbnamespace",
+    "blockchain/stake/internal/ticketdb",
+    "blockchain/stake/internal/tickettreap",
+    "chaincfg",
+    "chaincfg/chainec",
+    "chaincfg/chainhash",
+    "database",
+    "dcrec",
+    "dcrec/edwards",
+    "dcrec/secp256k1",
+    "dcrec/secp256k1/schnorr",
+    "dcrjson",
+    "dcrutil",
+    "txscript",
+    "wire"
+  ]
+  revision = "56f1981127f5d65c82b6ff6eb4d73b010994dd5b"
+
+[[projects]]
+  name = "github.com/decred/slog"
+  packages = ["."]
+  revision = "fbd821ef791ba2b8ae945f5d44f4e49396d230c5"
+  version = "v1.0.0"
 
 [[projects]]
   name = "github.com/jrick/logrotate"
@@ -69,6 +92,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "ca865d509ef76e69617ba986312229371b896b2822a4aee9c5010c0c19149b7a"
+  inputs-digest = "4bd77619a4360b3aebea16031b238f99412eb4783863b38ed10c41d940e0c424"
   solver-name = "gps-cdcl"
   solver-version = 1

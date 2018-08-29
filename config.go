@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btclog"
 	"github.com/btcsuite/go-flags"
 	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/slog"
 )
 
 const (
@@ -146,7 +146,7 @@ func fileExists(name string) bool {
 
 // validLogLevel returns whether or not logLevel is a valid debug log level.
 func validLogLevel(logLevel string) bool {
-	_, ok := btclog.LevelFromString(logLevel)
+	_, ok := slog.LevelFromString(logLevel)
 	return ok
 }
 

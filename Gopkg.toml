@@ -5,10 +5,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/btcsuite/btclog"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/btcsuite/go-flags"
 
 [[constraint]]

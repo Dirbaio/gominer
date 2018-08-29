@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/decred/gominer/stratum"
-
-	"github.com/btcsuite/btclog"
+	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
 )
 
@@ -34,7 +33,7 @@ var (
 	// backendLog is the logging backend used to create all subsystem loggers.
 	// The backend must not be used before the log rotator has been initialized,
 	// or data races and/or nil pointer dereferences will occur.
-	backendLog = btclog.NewBackend(logWriter{})
+	backendLog = slog.NewBackend(logWriter{})
 
 	// logRotator is one of the logging outputs.  It should be closed on
 	// application shutdown.
@@ -54,7 +53,7 @@ func init() {
 	stratum.UseLogger(poolLog)
 }
 
-var subsystemLoggers = map[string]btclog.Logger{
+var subsystemLoggers = map[string]slog.Logger{
 	"MAIN": mainLog,
 	"MINR": minrLog,
 	"POOL": poolLog,
@@ -94,7 +93,7 @@ func setLogLevel(subsystemID string, logLevel string) {
 	}
 
 	// Defaults to info if the log level is invalid.
-	level, _ := btclog.LevelFromString(logLevel)
+	level, _ := slog.LevelFromString(logLevel)
 	logger.SetLevel(level)
 }
 
