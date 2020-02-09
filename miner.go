@@ -1,50 +1,30 @@
+// Copyright (c) 2016 The Decred developers.
+
 package main
 
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/Dirbaio/gominer/cl"
+	"github.com/decred/gominer/stratum"
+	"github.com/decred/gominer/work"
 )
 
-const benchmark = true
-
-func getCLPlatforms() ([]cl.CL_platform_id, error) {
-	var numPlatforms cl.CL_uint
-	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetPlatformIDs")
-	}
-	platforms := make([]cl.CL_platform_id, numPlatforms)
-	status = cl.CLGetPlatformIDs(numPlatforms, platforms, nil)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetPlatformIDs")
-	}
-	return platforms, nil
-}
-
-// getCLDevices returns the list of devices for the given platform.
-func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
-	var numDevices cl.CL_uint
-	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil, &numDevices)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetDeviceIDs")
-	}
-	devices := make([]cl.CL_device_id, numDevices)
-	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices, devices, nil)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetDeviceIDs")
-	}
-	return devices, nil
-}
-
 type Miner struct {
+	// The following variables must only be used atomically.
+	validShares   uint64
+	staleShares   uint64
+	invalidShares uint64
+
+	started          uint32
 	devices          []*Device
 	workDone         chan []byte
 	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
+	pool             *stratum.Stratum
 }
 
 func NewMiner() (*Miner, error) {
@@ -54,24 +34,27 @@ func NewMiner() (*Miner, error) {
 		needsWorkRefresh: make(chan struct{}),
 	}
 
-	platformIDs, err := getCLPlatforms()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
-	}
-	platformID := platformIDs[0]
-	deviceIDs, err := getCLDevices(platformID)
-	if err != nil {
-		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
-	}
+	m.devices = make([]*Device, 0)
 
-	m.devices = make([]*Device, len(deviceIDs))
-	for i, deviceID := range deviceIDs {
-		var err error
-		m.devices[i], err = NewDevice(i, platformID, deviceID, m.workDone)
+	// If needed, start pool code.
+	if cfg.Pool != "" && !cfg.Benchmark {
+		s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword, cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version())
 		if err != nil {
 			return nil, err
 		}
+		m.pool = s
 	}
+
+	m, deviceListEnabledCount, err := newMinerDevs(m)
+	if err != nil {
+		return nil, err
+	}
+
+	if deviceListEnabledCount == 0 {
+		return nil, fmt.Errorf("No devices started")
+	}
+
+	m.started = uint32(time.Now().Unix())
 
 	return m, nil
 }
@@ -84,12 +67,42 @@ func (m *Miner) workSubmitThread() {
 		case <-m.quit:
 			return
 		case data := <-m.workDone:
-			accepted, err := GetWorkSubmit(data)
-			if err != nil {
-				minrLog.Errorf("Error submitting work: %v", err)
+			// Only use that is we are not using a pool.
+			if m.pool == nil {
+				accepted, err := GetWorkSubmit(data)
+				if err != nil {
+					atomic.AddUint64(&m.invalidShares, 1)
+					minrLog.Errorf("Error submitting work: %v", err)
+				} else {
+					if accepted {
+						atomic.AddUint64(&m.validShares, 1)
+						minrLog.Debugf("Submitted work successfully: %v",
+							accepted)
+					} else {
+						atomic.AddUint64(&m.invalidShares, 1)
+					}
+
+					m.needsWorkRefresh <- struct{}{}
+				}
 			} else {
-				minrLog.Errorf("Submitted work successfully: %v", accepted)
-				m.needsWorkRefresh <- struct{}{}
+				submitted, err := GetPoolWorkSubmit(data, m.pool)
+				if err != nil {
+					switch err {
+					case stratum.ErrStratumStaleWork:
+						atomic.AddUint64(&m.staleShares, 1)
+						minrLog.Debugf("Share submitted to pool was stale")
+
+					default:
+						atomic.AddUint64(&m.invalidShares, 1)
+						minrLog.Errorf("Error submitting work to pool: %v", err)
+					}
+				} else {
+					if submitted {
+						minrLog.Debugf("Submitted work to pool successfully: %v",
+							submitted)
+					}
+					m.needsWorkRefresh <- struct{}{}
+				}
 			}
 		}
 	}
@@ -98,19 +111,36 @@ func (m *Miner) workSubmitThread() {
 func (m *Miner) workRefreshThread() {
 	defer m.wg.Done()
 
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(100 * time.Millisecond)
 	defer t.Stop()
 
 	for {
-		work, err := GetWork()
-		if err != nil {
-			minrLog.Errorf("Error in getwork: %v", err)
+		// Only use that is we are not using a pool.
+		if m.pool == nil {
+			work, err := GetWork()
+			if err != nil {
+				minrLog.Errorf("Error in getwork: %v", err)
+			} else {
+				for _, d := range m.devices {
+					d.SetWork(work)
+				}
+			}
 		} else {
-			for _, d := range m.devices {
-				d.SetWork(work)
+			m.pool.Lock()
+			if m.pool.PoolWork.NewWork {
+				work, err := GetPoolWork(m.pool)
+				m.pool.Unlock()
+				if err != nil {
+					minrLog.Errorf("Error in getpoolwork: %v", err)
+				} else {
+					for _, d := range m.devices {
+						d.SetWork(work)
+					}
+				}
+			} else {
+				m.pool.Unlock()
 			}
 		}
-
 		select {
 		case <-m.quit:
 			return
@@ -123,12 +153,39 @@ func (m *Miner) workRefreshThread() {
 func (m *Miner) printStatsThread() {
 	defer m.wg.Done()
 
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(time.Second * 5)
 	defer t.Stop()
 
 	for {
+		if !cfg.Benchmark {
+			valid, rejected, stale, total, utility := m.Status()
+
+			if cfg.Pool != "" {
+				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v, Total: %v",
+					valid,
+					rejected,
+					stale,
+					total,
+				)
+				secondsElapsed := uint32(time.Now().Unix()) - m.started
+				if (secondsElapsed / 60) > 0 {
+					minrLog.Infof("Global utility (accepted shares/min): %v", utility)
+				}
+			} else {
+				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Total: %v",
+					valid,
+					rejected,
+					total,
+				)
+			}
+		}
+
 		for _, d := range m.devices {
+			d.UpdateFanTemp()
 			d.PrintStats()
+			if d.fanControlActive {
+				d.fanControl()
+			}
 		}
 
 		select {
@@ -157,7 +214,7 @@ func (m *Miner) Run() {
 
 	if cfg.Benchmark {
 		minrLog.Warn("Running in BENCHMARK mode! No real mining taking place!")
-		work := &Work{}
+		work := &work.Work{}
 		for _, d := range m.devices {
 			d.SetWork(work)
 		}
@@ -177,4 +234,24 @@ func (m *Miner) Stop() {
 	for _, d := range m.devices {
 		d.Stop()
 	}
+}
+
+func (m *Miner) Status() (uint64, uint64, uint64, uint64, float64) {
+	if cfg.Pool != "" {
+		valid := atomic.LoadUint64(&m.pool.ValidShares)
+		rejected := atomic.LoadUint64(&m.pool.InvalidShares)
+		stale := atomic.LoadUint64(&m.staleShares)
+		total := valid + rejected + stale
+
+		secondsElapsed := uint32(time.Now().Unix()) - m.started
+		utility := float64(valid) / (float64(secondsElapsed) / float64(60))
+
+		return valid, rejected, stale, total, utility
+	}
+
+	valid := atomic.LoadUint64(&m.validShares)
+	rejected := atomic.LoadUint64(&m.invalidShares)
+	total := valid + rejected
+
+	return valid, rejected, 0, total, 0
 }

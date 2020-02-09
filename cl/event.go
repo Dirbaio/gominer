@@ -1,28 +1,23 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-
-extern void go_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data);
-static void CL_CALLBACK c_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data) {
+// this needs to come out
+extern void	go_evt_notify(cl_event event, cl_int event_command_exec_status,
+		    void *user_data);
+static void CL_CALLBACK
+c_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data)
+{
 	go_evt_notify(event, event_command_exec_status, user_data);
 }
 
-static cl_int CLSetEventCallback(	cl_event event,
-									cl_int command_exec_callback_type,
-									void *user_data){
-    return clSetEventCallback(event, command_exec_callback_type, c_evt_notify, user_data);
+static cl_int
+CLSetEventCallback(cl_event event, cl_int command_exec_callback_type,
+    void *user_data)
+{
+    return clSetEventCallback(event, command_exec_callback_type, c_evt_notify,
+        user_data);
 }
 */
 import "C"

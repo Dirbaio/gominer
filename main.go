@@ -22,10 +22,15 @@ func gominerMain() error {
 		return err
 	}
 	cfg = tcfg
-	defer backendLog.Flush()
+	defer func() {
+		if logRotator != nil {
+			logRotator.Close()
+		}
+	}()
 
 	// Show version at startup.
-	mainLog.Infof("Version %s", version())
+	mainLog.Infof("Version %s %s (Go version %s)",
+		version(), gpuLib(), runtime.Version())
 
 	// Enable http profiling server if requested.
 	if cfg.Profile != "" {
@@ -39,7 +44,6 @@ func gominerMain() error {
 			err := http.ListenAndServe(listenAddr, nil)
 			if err != nil {
 				mainLog.Errorf("Unable to create profiler: %v", err)
-				backendLog.Flush()
 				os.Exit(1)
 			}
 		}()
@@ -78,11 +82,15 @@ func gominerMain() error {
 		return err
 	}
 
+	if len(cfg.APIListeners) != 0 {
+		go RunMonitor(m)
+	}
+
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		mainLog.Info("Got Control+C, exiting...")
+		mainLog.Warn("Got Control+C, exiting...")
 		m.Stop()
 	}()
 
