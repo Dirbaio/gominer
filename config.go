@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/go-flags"
+	"github.com/jessevdk/go-flags"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/slog"

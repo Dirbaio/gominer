@@ -23,12 +23,10 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	"github.com/btcsuite/go-socks/socks"
-
+	"github.com/decred/go-socks/socks"
 	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/wire"
-
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )

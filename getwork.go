@@ -17,8 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/btcsuite/go-socks/socks"
-
+	"github.com/decred/go-socks/socks"
 	"github.com/decred/gominer/stratum"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
