@@ -139,12 +139,10 @@ func fanControlSet(index int, fanCur uint32, tempTargetType string,
 	case TargetLower:
 		fanNewPercent = fanCur + fanAdjustmentPercent
 		fanNewValue = amdgpuFanPercentToValue(fanNewPercent)
-		break
 	// Increase the temperature by decreasing the fan speed
 	case TargetHigher:
 		fanNewPercent = fanCur - fanAdjustmentPercent
 		fanNewValue = amdgpuFanPercentToValue(fanNewPercent)
-		break
 	}
 
 	fanPath := amdgpuGetSysfsPath(index, "fan")
@@ -179,7 +177,7 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	str := string(buf.Bytes())
+	str := buf.String()
 	programFinal := []byte(str)
 
 	programSize[0] = cl.CL_size_t(len(programFinal))
@@ -275,7 +273,6 @@ func determineDeviceKind(index int, deviceType string) string {
 				deviceKind = DeviceKindAMDGPU
 			}
 		}
-		break
 	}
 
 	return deviceKind
@@ -446,7 +443,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 	}
 
 	// Create the program.
-	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc[:],
+	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc,
 		progSize[:], &status)
 	if status != cl.CL_SUCCESS {
 		return nil, clError(status, "CLCreateProgramWithSource")
@@ -561,7 +558,6 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 			atomic.StoreUint32(&d.temperature, temperature)
 			d.fanTempActive = true
 		}
-		break
 	}
 
 	// Check if temperature target is specified

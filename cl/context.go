@@ -57,8 +57,7 @@ func init() {
 
 //export go_ctx_notify
 func go_ctx_notify(errinfo *C.char, private_info unsafe.Pointer, cb C.int, user_data unsafe.Pointer) {
-	var c_user_data []unsafe.Pointer
-	c_user_data = *(*[]unsafe.Pointer)(user_data)
+	c_user_data := *(*[]unsafe.Pointer)(user_data)
 	ctx_notify[c_user_data[1]](C.GoString(errinfo), private_info, int(cb), c_user_data[0])
 }
 
@@ -76,13 +75,12 @@ func CLCreateContext(properties []CL_context_properties,
 		c_errcode_ret = CL_INVALID_VALUE
 		c_context = nil
 	} else {
-		var c_properties []C.cl_context_properties
 		var c_properties_ptr *C.cl_context_properties
 		var c_devices []C.cl_device_id
 		var c_devices_ptr *C.cl_device_id
 
 		if properties != nil {
-			c_properties = make([]C.cl_context_properties, len(properties))
+			c_properties := make([]C.cl_context_properties, len(properties))
 			for i := 0; i < len(properties); i++ {
 				c_properties[i] = C.cl_context_properties(properties[i])
 			}
@@ -125,7 +123,6 @@ func CLCreateContext(properties []CL_context_properties,
 				nil,
 				nil,
 				&c_errcode_ret)
-
 		}
 	}
 
@@ -149,11 +146,10 @@ func CLCreateContextFromType(properties []CL_context_properties,
 		c_errcode_ret = CL_INVALID_VALUE
 		c_context = nil
 	} else {
-		var c_properties []C.cl_context_properties
 		var c_properties_ptr *C.cl_context_properties
 
 		if properties != nil {
-			c_properties = make([]C.cl_context_properties, len(properties))
+			c_properties := make([]C.cl_context_properties, len(properties))
 			for i := 0; i < len(properties); i++ {
 				c_properties[i] = C.cl_context_properties(properties[i])
 			}

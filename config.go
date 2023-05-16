@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jessevdk/go-flags"
-	"github.com/decred/dcrd/chaincfg"
-	"github.com/decred/dcrd/dcrutil"
+	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/dcrutil/v3"
 	"github.com/decred/slog"
+	"github.com/jessevdk/go-flags"
 )
 
 const (
@@ -583,10 +583,10 @@ func loadConfig() (*config, []string, error) {
 	switch {
 	case cfg.TestNet:
 		defaultRPCPort = defaultRPCPortTestNet
-		chainParams = &chaincfg.TestNet3Params
+		chainParams = chaincfg.TestNet3Params()
 	case cfg.SimNet:
 		defaultRPCPort = defaultRPCPortSimNet
-		chainParams = &chaincfg.SimNetParams
+		chainParams = chaincfg.SimNetParams()
 	default:
 		defaultRPCPort = defaultRPCPortMainNet
 	}

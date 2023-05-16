@@ -42,10 +42,9 @@ func go_evt_notify(event C.cl_event, event_command_exec_status C.cl_int, user_da
 func CLCreateUserEvent(context CL_context,
 	errcode_ret *CL_int) CL_event {
 
-	var c_event C.cl_event
 	var c_errcode_ret C.cl_int
 
-	c_event = C.clCreateUserEvent(context.cl_context, &c_errcode_ret)
+	c_event := C.clCreateUserEvent(context.cl_context, &c_errcode_ret)
 
 	if errcode_ret != nil {
 		*errcode_ret = CL_int(c_errcode_ret)
@@ -66,8 +65,7 @@ func CLWaitForEvents(num_events CL_uint,
 		return CL_INVALID_VALUE
 	}
 
-	var c_event_list []C.cl_event
-	c_event_list = make([]C.cl_event, len(event_list))
+	c_event_list := make([]C.cl_event, len(event_list))
 	for i := 0; i < len(event_list); i++ {
 		c_event_list[i] = event_list[i].cl_event
 	}

@@ -23,15 +23,15 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	"github.com/decred/go-socks/socks"
-	"github.com/decred/dcrd/chaincfg"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
 	"github.com/decred/dcrd/wire"
+	"github.com/decred/go-socks/socks"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
 
-var chainParams = &chaincfg.MainNetParams
+var chainParams = chaincfg.MainNetParams()
 
 // ErrStratumStaleWork indicates that the work to send to the pool was stale.
 var ErrStratumStaleWork = fmt.Errorf("Stale work, throwing away")

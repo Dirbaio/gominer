@@ -1,3 +1,5 @@
+// +build opencladl,!cuda,!opencl
+
 package adl
 
 /*

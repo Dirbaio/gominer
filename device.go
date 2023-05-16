@@ -8,16 +8,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/blockchain"
-	"github.com/decred/dcrd/chaincfg"
+	"github.com/decred/dcrd/blockchain/standalone"
 	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
 
 	"github.com/decred/gominer/blake256"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
 
-var chainParams = &chaincfg.MainNetParams
+var chainParams = chaincfg.MainNetParams()
 var deviceLibraryInitialized = false
 
 // Constants for fan and temperature bits
@@ -279,7 +279,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 
 	// Hashes that reach this logic and fail the minimal proof of
 	// work check are considered to be hardware errors.
-	hashNum := blockchain.HashToBig(&hash)
+	hashNum := standalone.HashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
 		minrLog.Errorf("DEV #%d Hardware error found, hash %v above "+
 			"minimum target %064x", d.index, hash, d.work.Target.Bytes())
@@ -351,7 +351,6 @@ func (d *Device) UpdateFanTemp() {
 			fanPercent, temperature := deviceStats(d.index)
 			atomic.StoreUint32(&d.fanPercent, fanPercent)
 			atomic.StoreUint32(&d.temperature, temperature)
-			break
 		}
 	}
 }

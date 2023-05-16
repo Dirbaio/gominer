@@ -16,9 +16,8 @@ func CLCreateBuffer(context CL_context,
 	errcode_ret *CL_int) CL_mem {
 
 	var c_errcode_ret C.cl_int
-	var c_memobj C.cl_mem
 
-	c_memobj = C.clCreateBuffer(context.cl_context,
+	c_memobj := C.clCreateBuffer(context.cl_context,
 		C.cl_mem_flags(flags),
 		C.size_t(size),
 		host_ptr,
@@ -38,9 +37,8 @@ func CLCreateSubBuffer(buffer CL_mem,
 	errcode_ret *CL_int) CL_mem {
 
 	var c_errcode_ret C.cl_int
-	var c_memobj C.cl_mem
 
-	c_memobj = C.clCreateSubBuffer(buffer.cl_mem,
+	c_memobj := C.clCreateSubBuffer(buffer.cl_mem,
 		C.cl_mem_flags(flags),
 		C.cl_buffer_create_type(buffer_create_type),
 		buffer_create_info,
@@ -73,8 +71,7 @@ func CLEnqueueReadBuffer(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -127,8 +124,7 @@ func CLEnqueueWriteBuffer(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -181,8 +177,7 @@ func CLEnqueueCopyBuffer(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -250,8 +245,7 @@ func CLEnqueueReadBufferRect(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -329,8 +323,7 @@ func CLEnqueueWriteBufferRect(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -407,8 +400,7 @@ func CLEnqueueCopyBufferRect(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -475,8 +467,7 @@ func CLEnqueueMapBuffer(command_queue CL_command_queue,
 	var c_ptr_ret unsafe.Pointer
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
