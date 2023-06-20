@@ -183,7 +183,7 @@ func CLBuildProgram(program CL_program,
 
 	c_devices = make([]C.cl_device_id, len(devices))
 	for i := 0; i < len(devices); i++ {
-		c_devices[i] = C.cl_device_id(devices[i].cl_device_id)
+		c_devices[i] = devices[i].cl_device_id
 	}
 	if options != nil {
 		c_options = C.CString(string(options))

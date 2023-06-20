@@ -70,7 +70,7 @@ type Config struct {
 	Version   string
 }
 
-// NotifyWork holds all the info recieved from a mining.notify message along
+// NotifyWork holds all the info received from a mining.notify message along
 // with the Work data generate from it.
 type NotifyWork struct {
 	Clean             bool

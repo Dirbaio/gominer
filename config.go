@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/decred/dcrd/chaincfg/v3"
-	"github.com/decred/dcrd/dcrutil/v3"
+	"github.com/decred/dcrd/dcrutil/v4"
 	"github.com/decred/slog"
 	"github.com/jessevdk/go-flags"
 )
@@ -37,7 +37,6 @@ var (
 	defaultRPCPortMainNet = "9109"
 	defaultRPCPortTestNet = "19109"
 	defaultRPCPortSimNet  = "19556"
-	defaultAPIHost        = "localhost"
 	defaultAPIPort        = "3333"
 	defaultLogDir         = filepath.Join(minerHomeDir, defaultLogDirname)
 	defaultAutocalibrate  = 500
@@ -135,16 +134,6 @@ func normalizeAddresses(addrs []string, defaultPort string) []string {
 	return removeDuplicateAddresses(addrs)
 }
 
-// filesExists reports whether the named file or directory exists.
-func fileExists(name string) bool {
-	if _, err := os.Stat(name); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
 // validLogLevel returns whether or not logLevel is a valid debug log level.
 func validLogLevel(logLevel string) bool {
 	_, ok := slog.LevelFromString(logLevel)
@@ -234,10 +223,10 @@ func cleanAndExpandPath(path string) string {
 // line options.
 //
 // The configuration proceeds as follows:
-// 	1) Start with a default config with sane settings
-// 	2) Pre-parse the command line to check for an alternative config file
-// 	3) Load configuration file overwriting defaults with any specified options
-// 	4) Parse CLI options and overwrite/add any specified options
+//  1. Start with a default config with sane settings
+//  2. Pre-parse the command line to check for an alternative config file
+//  3. Load configuration file overwriting defaults with any specified options
+//  4. Parse CLI options and overwrite/add any specified options
 //
 // The above results in btcd functioning properly without any config settings
 // while still allowing the user to override settings with config files and

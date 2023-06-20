@@ -1,0 +1,25 @@
+run:
+  deadline: 10m
+  build-tags:
+    - opencl
+
+linters:
+  disable-all: true
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - exportloopref
+    - gofmt
+    - goimports
+    - gosimple
+    - grouper
+    - ineffassign
+    - misspell
+    - nosprintfhostport
+    - reassign
+    - rowserrcheck
+    - tparallel
+    - unconvert
+    - unused

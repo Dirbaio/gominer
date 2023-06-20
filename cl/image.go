@@ -88,8 +88,7 @@ func CLEnqueueMapImage(command_queue CL_command_queue,
 	}
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -163,8 +162,7 @@ func CLEnqueueCopyImageToBuffer(command_queue CL_command_queue,
 		c_region[i] = C.size_t(region[i])
 	}
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -222,8 +220,7 @@ func CLEnqueueCopyBufferToImage(command_queue CL_command_queue,
 		c_region[i] = C.size_t(region[i])
 	}
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -283,8 +280,7 @@ func CLEnqueueReadImage(command_queue CL_command_queue,
 		c_region[i] = C.size_t(region[i])
 	}
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -348,8 +344,7 @@ func CLEnqueueWriteImage(command_queue CL_command_queue,
 		c_region[i] = C.size_t(region[i])
 	}
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}
@@ -412,8 +407,7 @@ func CLEnqueueCopyImage(command_queue CL_command_queue,
 		c_region[i] = C.size_t(region[i])
 	}
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}

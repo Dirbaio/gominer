@@ -92,7 +92,7 @@ func CLCreateContext(properties []CL_context_properties,
 		if devices != nil {
 			c_devices = make([]C.cl_device_id, len(devices))
 			for i := 0; i < len(devices); i++ {
-				c_devices[i] = C.cl_device_id(devices[i].cl_device_id)
+				c_devices[i] = devices[i].cl_device_id
 			}
 			c_devices_ptr = &c_devices[0]
 		} else {

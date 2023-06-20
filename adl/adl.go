@@ -1,3 +1,4 @@
+//go:build opencladl && !cuda && !opencl
 // +build opencladl,!cuda,!opencl
 
 package adl

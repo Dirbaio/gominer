@@ -1,5 +1,6 @@
 // Copyright (c) 2016 The Decred developers.
 
+//go:build opencl && !cuda && !opencladl
 // +build opencl,!cuda,!opencladl
 
 package main
@@ -182,9 +183,7 @@ func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
 
 	programSize[0] = cl.CL_size_t(len(programFinal))
 	programBuffer[0] = make([]byte, programSize[0])
-	for i := range programFinal {
-		programBuffer[0][i] = programFinal[i]
-	}
+	copy(programBuffer[0], programFinal)
 
 	return programBuffer[:], programSize[:], nil
 }
@@ -205,7 +204,6 @@ type Device struct {
 
 	sync.Mutex
 	index int
-	cuda  bool
 
 	// Items for OpenCL device
 	platformID               cl.CL_platform_id
@@ -223,10 +221,6 @@ type Device struct {
 	fanTempActive            bool
 	kind                     string
 	tempTarget               uint32
-
-	//cuInput        cu.DevicePtr
-	cuInSize       int64
-	cuOutputBuffer []float64
 
 	workSize uint32
 
@@ -327,20 +321,6 @@ func deviceStatsWriteSysfsEntry(path string, value uint32) error {
 	}
 
 	return nil
-}
-
-func getCLInfo() (cl.CL_platform_id, []cl.CL_device_id, error) {
-	var platformID cl.CL_platform_id
-	platformIDs, err := getCLPlatforms()
-	if err != nil {
-		return platformID, nil, fmt.Errorf("Could not get CL platforms: %v", err)
-	}
-	platformID = platformIDs[0]
-	CLdeviceIDs, err := getCLDevices(platformID)
-	if err != nil {
-		return platformID, nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
-	}
-	return platformID, CLdeviceIDs, nil
 }
 
 func getCLPlatforms() ([]cl.CL_platform_id, error) {
@@ -529,12 +509,12 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		}
 		if len(cfg.WorkSizeInts) > 0 {
 			// Apply the first setting as a global setting
-			globalWorkSize = uint32(cfg.WorkSizeInts[0])
+			globalWorkSize = cfg.WorkSizeInts[0]
 
 			// Override with the per-device setting if it exists
 			for i := range cfg.WorkSizeInts {
 				if i == order {
-					globalWorkSize = uint32(cfg.WorkSizeInts[order])
+					globalWorkSize = cfg.WorkSizeInts[order]
 				}
 			}
 
@@ -568,7 +548,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		// Override with the per-device setting if it exists
 		for i := range cfg.TempTargetInts {
 			if i == order {
-				d.tempTarget = uint32(cfg.TempTargetInts[order])
+				d.tempTarget = cfg.TempTargetInts[order]
 			}
 		}
 		d.fanControlActive = true

@@ -1,5 +1,6 @@
 // Copyright (c) 2016 The Decred developers.
 
+//go:build opencladl && !cuda && !opencl
 // +build opencladl,!cuda,!opencl
 
 package main

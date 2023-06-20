@@ -21,14 +21,11 @@ func CLCreateKernel(program CL_program,
 	}
 
 	var c_errcode_ret C.cl_int
-	var c_kernel C.cl_kernel
 
-	var c_kernel_name *C.char
-
-	c_kernel_name = C.CString(string(kernel_name))
+	c_kernel_name := C.CString(string(kernel_name))
 	defer C.free(unsafe.Pointer(c_kernel_name))
 
-	c_kernel = C.clCreateKernel(program.cl_program,
+	c_kernel := C.clCreateKernel(program.cl_program,
 		c_kernel_name, &c_errcode_ret)
 
 	if errcode_ret != nil {
@@ -300,8 +297,7 @@ func CLEnqueueNDRangeKernel(command_queue CL_command_queue,
 	}
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}

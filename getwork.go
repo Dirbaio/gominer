@@ -89,31 +89,10 @@ type getWorkSubmitResponseJson struct {
 	}
 }
 
-var (
-	httpClient *http.Client
-)
-
 const (
 	MaxIdleConnections int = 20
 	RequestTimeout     int = 5
 )
-
-// init HTTPClient
-func init() {
-	httpClient = createHTTPClient()
-}
-
-// createHTTPClient for connection re-use
-func createHTTPClient() *http.Client {
-	client := &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: MaxIdleConnections,
-		},
-		Timeout: time.Duration(RequestTimeout) * time.Second,
-	}
-
-	return client
-}
 
 // GetWork makes a getwork RPC call and returns the result (data and target)
 func GetWork() (*work.Work, error) {

@@ -1,6 +1,7 @@
 // Copyright (c) 2016 The Decred developers.
 
-//+build linux,cuda darwin,cuda
+//go:build (linux && cuda) || (darwin && cuda)
+// +build linux,cuda darwin,cuda
 
 package main
 

@@ -147,7 +147,7 @@ type CL_channel_order CL_uint
 type CL_channel_type CL_uint
 type CL_mem_flags CL_bitfield
 
-//type CL_svm_mem_flags CL_bitfield
+// type CL_svm_mem_flags CL_bitfield
 type CL_mem_object_type CL_uint
 type CL_mem_info CL_uint
 type CL_mem_migration_flags CL_bitfield

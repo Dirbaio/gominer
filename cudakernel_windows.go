@@ -1,4 +1,5 @@
 // Copyright (c) 2016 The Decred developers.
+//go:build cuda
 // +build cuda
 
 package main
