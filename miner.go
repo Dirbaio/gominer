@@ -82,7 +82,10 @@ func (m *Miner) workSubmitThread() {
 						atomic.AddUint64(&m.invalidShares, 1)
 					}
 
-					m.needsWorkRefresh <- struct{}{}
+					select {
+					case m.needsWorkRefresh <- struct{}{}:
+					case <-m.quit:
+					}
 				}
 			} else {
 				submitted, err := GetPoolWorkSubmit(data, m.pool)
@@ -101,7 +104,11 @@ func (m *Miner) workSubmitThread() {
 						minrLog.Debugf("Submitted work to pool successfully: %v",
 							submitted)
 					}
-					m.needsWorkRefresh <- struct{}{}
+
+					select {
+					case m.needsWorkRefresh <- struct{}{}:
+					case <-m.quit:
+					}
 				}
 			}
 		}

@@ -359,7 +359,10 @@ func (d *Device) Stop() {
 }
 
 func (d *Device) SetWork(w *work.Work) {
-	d.newWork <- w
+	select {
+	case d.newWork <- w:
+	case <-d.quit:
+	}
 }
 
 func (d *Device) PrintStats() {
