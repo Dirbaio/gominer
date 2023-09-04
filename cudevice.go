@@ -11,7 +11,6 @@ package main
 import "C"
 
 import (
-	"encoding/binary"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -28,20 +27,21 @@ import (
 )
 
 const (
-	// From ccminer
-	threadsPerBlock = 640
-	blockx          = threadsPerBlock
+	// threadsPerBlock is the nb of CUDA threads per processing block.
+	threadsPerBlock = 1024
+
+	// dimGrid is the nb of CUDA blocks to issue.
+	dimGrid = 65504
+
+	// maxOutputNbs is the max number of individual output results. MUST
+	// match what is defined in decred.cu.
+	maxOutputResults = 32
 )
 
 // Return the GPU library in use.
 func gpuLib() string {
 	return "CUDA"
 }
-
-const (
-	localWorksize      = 64
-	cuOutputBufferSize = 64
-)
 
 type Device struct {
 	// The following variables must only be used atomically.
@@ -62,11 +62,7 @@ type Device struct {
 	tempTarget               uint32
 
 	// Items for CUDA device
-	cuDeviceID     cu.Device
-	cuInSize       int64
-	cuOutputBuffer []float64
-
-	workSize uint32
+	cuDeviceID cu.Device
 
 	// extraNonce is the device extraNonce, where the first
 	// byte is the device ID (supporting up to 255 devices)
@@ -92,16 +88,11 @@ type Device struct {
 	quit chan struct{}
 }
 
-func decredCPUSetBlock52(input *[192]byte) {
-	if input == nil {
-		panic("input is nil")
-	}
-	C.decred_cpu_setBlock_52((*C.uint32_t)(unsafe.Pointer(input)))
-}
-
-func decredHashNonce(gridx, blockx, threads uint32, startNonce uint32, nonceResults cu.DevicePtr, targetHigh uint32) {
-	C.decred_hash_nonce(C.uint32_t(gridx), C.uint32_t(blockx), C.uint32_t(threads),
-		C.uint32_t(startNonce), (*C.uint32_t)(unsafe.Pointer(nonceResults)), C.uint32_t(targetHigh))
+func decredBlake3Hash(dimgrid, threads uint32, midstate, lastblock unsafe.Pointer, out cu.DevicePtr) {
+	C.decred_blake3_hash(C.uint(dimgrid), C.uint(threads),
+		(*C.uint)(midstate),
+		(*C.uint)(lastblock),
+		(*C.uint)(unsafe.Pointer(out)))
 }
 
 func deviceStats(index int) (uint32, uint32) {
@@ -198,6 +189,11 @@ func ListDevices() {
 func NewCuDevice(index int, order int, deviceID cu.Device,
 	workDone chan []byte) (*Device, error) {
 
+	devProps := cu.DeviceGetProperties(deviceID)
+	minrLog.Infof("CUDA device %.2x props: MaxThreadsPerBlock: %d, MaxThreadsDim: %v, "+
+		"MaxGridSize: %v, RegsPerBlock: %d", deviceID, devProps.MaxThreadsPerBlock,
+		devProps.MaxThreadsDim, devProps.MaxGridSize, devProps.RegsPerBlock)
+
 	d := &Device{
 		index:       index,
 		cuDeviceID:  deviceID,
@@ -212,8 +208,6 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 		temperature: 0,
 		tempTarget:  0,
 	}
-
-	d.cuInSize = 21
 
 	if !deviceLibraryInitialized {
 		err := nvml.Init()
@@ -292,20 +286,44 @@ func (d *Device) runDevice() error {
 	// at compile time.
 
 	minrLog.Infof("Started GPU #%d: %s", d.index, d.deviceName)
-	nonceResultsH := cu.MallocHost(d.cuInSize * 4)
-	nonceResultsD := cu.Malloc(d.cuInSize * 4)
+
+	const WORDSZ = 4 // Everything is sent as uint32.
+
+	// Setup input buffers.
+	midstateSz := int64(len(d.midstate) * WORDSZ)
+	midstateH := cu.MallocHost(midstateSz)
+	defer cu.MemFreeHost(midstateH)
+	midstateHSliceHeader := reflect.SliceHeader{
+		Data: uintptr(midstateH),
+		Len:  int(midstateSz),
+		Cap:  int(midstateSz),
+	}
+	midstateHSlice := *(*[]uint32)(unsafe.Pointer(&midstateHSliceHeader))
+
+	lastBlockSz := int64(len(d.lastBlock) * WORDSZ)
+	lastBlockH := cu.MallocHost(lastBlockSz)
+	defer cu.MemFreeHost(lastBlockH)
+	lastBlockHSliceHeader := reflect.SliceHeader{
+		Data: uintptr(lastBlockH),
+		Len:  int(lastBlockSz),
+		Cap:  int(lastBlockSz),
+	}
+	lastBlockHSlice := *(*[]uint32)(unsafe.Pointer(&lastBlockHSliceHeader))
+
+	// Setup output buffer.
+	nonceResultsH := cu.MallocHost(maxOutputResults * WORDSZ)
+	nonceResultsD := cu.Malloc(maxOutputResults * WORDSZ)
 	defer cu.MemFreeHost(nonceResultsH)
 	defer nonceResultsD.Free()
 
 	nonceResultsHSliceHeader := reflect.SliceHeader{
 		Data: uintptr(nonceResultsH),
-		Len:  int(d.cuInSize),
-		Cap:  int(d.cuInSize),
+		Len:  int(maxOutputResults),
+		Cap:  int(maxOutputResults),
 	}
 	nonceResultsHSlice := *(*[]uint32)(unsafe.Pointer(&nonceResultsHSliceHeader))
 
-	endianData := new([192]byte)
-
+	// Mining loop.
 	for {
 		d.updateCurrentWork()
 
@@ -319,16 +337,6 @@ func (d *Device) runDevice() error {
 		util.RolloverExtraNonce(&d.extraNonce)
 		d.lastBlock[work.Nonce1Word] = d.extraNonce
 
-		copy(endianData[:], d.work.Data[:128])
-		for i, j := 128, 0; i < 180; {
-			b := make([]byte, 4)
-			binary.BigEndian.PutUint32(b, d.lastBlock[j])
-			copy(endianData[i:], b)
-			i += 4
-			j++
-		}
-		decredCPUSetBlock52(endianData)
-
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
 		ts := d.work.JobTime
@@ -338,26 +346,22 @@ func (d *Device) runDevice() error {
 		}
 		d.lastBlock[work.TimestampWord] = ts
 
+		// Clear the results buffer.
 		nonceResultsHSlice[0] = 0
+		cu.MemcpyHtoD(nonceResultsD, nonceResultsH, maxOutputResults*WORDSZ)
 
-		cu.MemcpyHtoD(nonceResultsD, nonceResultsH, d.cuInSize*4)
+		// Copy data into the input buffers.
+		copy(midstateHSlice, d.midstate[:])
+		copy(lastBlockHSlice, d.lastBlock[:])
 
 		// Execute the kernel and follow its execution time.
 		currentTime := time.Now()
+		decredBlake3Hash(dimGrid, threadsPerBlock, midstateH, lastBlockH, nonceResultsD)
 
-		startNonce := d.lastBlock[work.Nonce1Word]
+		// Copy results back from device to host.
+		cu.MemcpyDtoH(nonceResultsH, nonceResultsD, maxOutputResults*WORDSZ)
 
-		throughput := uint32(0x20000000)
-		//gridx := ((throughput - 1) / 640)
-
-		gridx := uint32(52428) // like ccminer
-
-		targetHigh := ^uint32(0)
-
-		decredHashNonce(gridx, blockx, throughput, startNonce, nonceResultsD, targetHigh)
-
-		cu.MemcpyDtoH(nonceResultsH, nonceResultsD, d.cuInSize)
-
+		// Verify the results.
 		numResults := nonceResultsHSlice[0]
 		for i, result := range nonceResultsHSlice[1 : 1+numResults] {
 			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
@@ -375,14 +379,6 @@ func (d *Device) runDevice() error {
 		elapsedTime := time.Since(currentTime)
 		minrLog.Tracef("GPU #%d: Kernel execution to read time: %v", d.index,
 			elapsedTime)
-	}
-}
-
-func minUint32(a, b uint32) uint32 {
-	if a > b {
-		return a
-	} else {
-		return b
 	}
 }
 

@@ -78,9 +78,6 @@ $ curl http://localhost:3333/
 
 #### Pre-Requisites
 
-NOTE: The CUDA support has NOT been updated yet for BLAKE3.  Matheus is working
-on adding support, so this section hasn't been modified, but it is out of date.
-
 You will either need to install CUDA for NVIDIA graphics cards or OpenCL
 library/headers that support your device such as: AMDGPU-PRO (for newer AMD
 cards), Beignet (for Intel Graphics), or Catalyst (for older AMD cards).
@@ -89,12 +86,11 @@ For example, on Ubuntu 23.04 you can install the necessary OpenCL packages (for
 Intel Graphics) and CUDA libraries with:
 
 ```
-sudo apt-get install beignet-dev nvidia-cuda-dev nvidia-cuda-toolkit
+sudo apt-get install nvidia-cuda-dev nvidia-cuda-toolkit
 ```
 
 gominer has been built successfully on Ubuntu 23.04 with go1.21.0,
-g++ 5.4.0, and beignet-dev 1.1.1-2 although other combinations should work as
-well.
+g++ 5.4.0 although other combinations should work as well.
 
 #### Instructions
 
@@ -134,6 +130,9 @@ go build -tags opencladl
 #### Build Instructions
 
 ##### CUDA
+
+**NOTE**: The CUDA version of the Blake3 gominer is not yet compatible to
+windows.
 
 ###### Pre-Requisites
 
