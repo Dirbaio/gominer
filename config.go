@@ -26,6 +26,11 @@ const (
 	defaultLogDirname     = "logs"
 	defaultLogFilename    = "gominer.log"
 	defaultClKernel       = "blake3.cl"
+
+	// defaultCudaThreadCount is the default number of threads to execute
+	// in a CUDA batch job. This has been empirically determined to be
+	// a reasonable default in current Nvidia hardware.
+	defaultCudaThreadCount = "256"
 )
 
 var (
@@ -93,6 +98,12 @@ type config struct {
 	TempTargetInts    []uint32
 	WorkSize          string `short:"W" long:"worksize" description:"The explicitly declared sizes of the work to do per device (overrides intensity). Single global value or a comma separated list."`
 	WorkSizeInts      []uint32
+
+	// CUDA-related config parameters.
+	CudaGridSize        string `long:"cudagridsize" description:"Size of the CUDA grid to use per device. Single global value or a comma separated list"`
+	CudaGridSizeInts    []int
+	CudaThreadCount     string `long:"cudathreadcount" description:"Number of CUDA threads to use per device. Single global value or a comma separated list"`
+	CudaThreadCountInts []int
 
 	// Pool related options
 	Pool         string `short:"o" long:"pool" description:"Pool to connect to (e.g.stratum+tcp://pool:port)"`
@@ -219,6 +230,48 @@ func cleanAndExpandPath(path string) string {
 	return filepath.Clean(os.ExpandEnv(path))
 }
 
+// commaListToInts converts a (possibly) comma separated string-encoded ints
+// into a slice of ints.
+func commaListToInts(s string) ([]int, error) {
+	if len(s) == 0 {
+		return nil, nil
+	}
+
+	// Parse a list like "29,30"
+	var res []int
+	if strings.Contains(s, ",") {
+		split := strings.Split(s, ",")
+		res = make([]int, len(split))
+		for i := range split {
+			j, err := strconv.Atoi(split[i])
+			if err != nil {
+				err := fmt.Errorf("item %q is not an int: %v"+
+					split[i], err)
+				return nil, err
+			}
+			res[i] = j
+		}
+	} else {
+		i, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an int: %v", s, err)
+		}
+		res = []int{i}
+	}
+
+	return res, nil
+}
+
+// ithOrFirstInt returns s[index] if len(s) > index or s[0] if not.
+//
+//nolint:unused
+func ithOrFirstInt(s []int, index int) int {
+	if index < len(s) {
+		return s[index]
+	}
+	return s[0]
+}
+
 // loadConfig initializes and parses the config using a config file and command
 // line options.
 //
@@ -240,6 +293,8 @@ func loadConfig() (*config, []string, error) {
 		RPCServer:  defaultRPCServer,
 		RPCCert:    defaultRPCCertFile,
 		ClKernel:   defaultClKernel,
+
+		CudaThreadCount: defaultCudaThreadCount,
 	}
 
 	// Create the home directory if it doesn't already exist.
@@ -541,6 +596,18 @@ func loadConfig() (*config, []string, error) {
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}
+	}
+
+	cfg.CudaGridSizeInts, err = commaListToInts(cfg.CudaGridSize)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot convert CUDA grid size to int: %v\n", err)
+		return nil, nil, err
+	}
+
+	cfg.CudaThreadCountInts, err = commaListToInts(cfg.CudaThreadCount)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Cannot convert CUDA thread count to int: %v\n", err)
+		return nil, nil, err
 	}
 
 	// Special show command to list supported subsystems and exit.

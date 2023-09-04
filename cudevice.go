@@ -12,6 +12,8 @@ import "C"
 
 import (
 	"fmt"
+	"math"
+	"math/bits"
 	"reflect"
 	"runtime"
 	"sync"
@@ -27,12 +29,6 @@ import (
 )
 
 const (
-	// threadsPerBlock is the nb of CUDA threads per processing block.
-	threadsPerBlock = 1024
-
-	// dimGrid is the nb of CUDA blocks to issue.
-	dimGrid = 65504
-
 	// maxOutputNbs is the max number of individual output results. MUST
 	// match what is defined in decred.cu.
 	maxOutputResults = 32
@@ -62,7 +58,9 @@ type Device struct {
 	tempTarget               uint32
 
 	// Items for CUDA device
-	cuDeviceID cu.Device
+	cuDeviceID    cu.Device
+	cuThreadCount uint32
+	cuGridSize    uint32
 
 	// extraNonce is the device extraNonce, where the first
 	// byte is the device ID (supporting up to 255 devices)
@@ -260,10 +258,39 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 		}
 	}
 
+	// Use the max nb of threads by default.
+	threadCount := uint32(devProps.MaxThreadsPerBlock)
+	if len(cfg.CudaThreadCountInts) > 0 {
+		threadCount = uint32(ithOrFirstInt(cfg.CudaThreadCountInts, order))
+		if threadCount > uint32(devProps.MaxThreadsPerBlock) {
+			return nil, fmt.Errorf("specified CUDA thread count %d "+
+				"greater than maximum allowed by device #%d (%d)",
+				threadCount, deviceID, devProps.MaxThreadsPerBlock)
+		}
+	}
+
+	// Autocalibrate the desired grid size for the device.
+	var gridSize uint32
+	autocalibrate := len(cfg.CudaGridSize) == 0
+	if autocalibrate {
+		var err error
+		calibrateTime := ithOrFirstInt(cfg.AutocalibrateInts, order)
+		gridSize, err = d.calcGridSizeForMilliseconds(calibrateTime, threadCount)
+		if err != nil {
+			return nil, err
+		}
+
+		minrLog.Infof("Autocalibration successful, grid size for %v"+
+			"ms per kernel execution on device %v with %d threads "+
+			"determined to be %v",
+			calibrateTime, d.index, threadCount, gridSize)
+	} else {
+		gridSize = uint32(ithOrFirstInt(cfg.CudaGridSizeInts, order))
+	}
+
+	d.cuGridSize = gridSize
+	d.cuThreadCount = threadCount
 	d.started = uint32(time.Now().Unix())
-
-	// Autocalibrate?
-
 	return d, nil
 }
 
@@ -315,7 +342,6 @@ func (d *Device) runDevice() error {
 	nonceResultsD := cu.Malloc(maxOutputResults * WORDSZ)
 	defer cu.MemFreeHost(nonceResultsH)
 	defer nonceResultsD.Free()
-
 	nonceResultsHSliceHeader := reflect.SliceHeader{
 		Data: uintptr(nonceResultsH),
 		Len:  int(maxOutputResults),
@@ -356,7 +382,7 @@ func (d *Device) runDevice() error {
 
 		// Execute the kernel and follow its execution time.
 		currentTime := time.Now()
-		decredBlake3Hash(dimGrid, threadsPerBlock, midstateH, lastBlockH, nonceResultsD)
+		decredBlake3Hash(d.cuGridSize, d.cuThreadCount, midstateH, lastBlockH, nonceResultsD)
 
 		// Copy results back from device to host.
 		cu.MemcpyDtoH(nonceResultsH, nonceResultsD, maxOutputResults*WORDSZ)
@@ -382,6 +408,106 @@ func (d *Device) runDevice() error {
 	}
 }
 
+// getKernelExecutionTime returns the kernel execution time for a device.
+func (d *Device) getKernelExecutionTime(gridSize, threadCount uint32) (time.Duration,
+	error) {
+
+	const WORDSZ = 4 // Everything is sent as uint32.
+
+	// Setup input buffers.
+	midstateSz := int64(len(d.midstate) * WORDSZ)
+	midstateH := cu.MallocHost(midstateSz)
+	defer cu.MemFreeHost(midstateH)
+	midstateHSliceHeader := reflect.SliceHeader{
+		Data: uintptr(midstateH),
+		Len:  int(midstateSz),
+		Cap:  int(midstateSz),
+	}
+	midstateHSlice := *(*[]uint32)(unsafe.Pointer(&midstateHSliceHeader))
+
+	lastBlockSz := int64(len(d.lastBlock) * WORDSZ)
+	lastBlockH := cu.MallocHost(lastBlockSz)
+	defer cu.MemFreeHost(lastBlockH)
+	lastBlockHSliceHeader := reflect.SliceHeader{
+		Data: uintptr(lastBlockH),
+		Len:  int(lastBlockSz),
+		Cap:  int(lastBlockSz),
+	}
+	lastBlockHSlice := *(*[]uint32)(unsafe.Pointer(&lastBlockHSliceHeader))
+
+	// Setup output buffer.
+	nonceResultsH := cu.MallocHost(maxOutputResults * WORDSZ)
+	nonceResultsD := cu.Malloc(maxOutputResults * WORDSZ)
+	defer cu.MemFreeHost(nonceResultsH)
+	defer nonceResultsD.Free()
+	nonceResultsHSliceHeader := reflect.SliceHeader{
+		Data: uintptr(nonceResultsH),
+		Len:  int(maxOutputResults),
+		Cap:  int(maxOutputResults),
+	}
+	nonceResultsHSlice := *(*[]uint32)(unsafe.Pointer(&nonceResultsHSliceHeader))
+
+	// Clear the results buffer.
+	nonceResultsHSlice[0] = 0
+	cu.MemcpyHtoD(nonceResultsD, nonceResultsH, maxOutputResults*WORDSZ)
+
+	// Copy data into the input buffers.
+	copy(midstateHSlice, d.midstate[:])
+	copy(lastBlockHSlice, d.lastBlock[:])
+
+	// Execute the kernel and follow its execution time.
+	currentTime := time.Now()
+	decredBlake3Hash(gridSize, threadCount, midstateH, lastBlockH, nonceResultsD)
+	cu.MemcpyDtoH(nonceResultsH, nonceResultsD, maxOutputResults*WORDSZ)
+	elapsedTime := time.Since(currentTime)
+	minrLog.Tracef("DEV #%d: Kernel execution to read time for work "+
+		"size calibration: %v", d.index, elapsedTime)
+
+	return elapsedTime, nil
+}
+
+// calcWorkSizeForMilliseconds calculates the correct worksize to achieve
+// a device execution cycle of the passed duration in milliseconds.
+func (d *Device) calcGridSizeForMilliseconds(ms int, threadCount uint32) (uint32, error) {
+	gridSize := uint32(32)
+	timeToAchieve := time.Duration(ms) * time.Millisecond
+	for {
+		execTime, err := d.getKernelExecutionTime(gridSize, threadCount)
+		if err != nil {
+			return 0, err
+		}
+
+		// If we fail to go above the desired execution time, double
+		// the grid size and try again.
+		if execTime < timeToAchieve && gridSize < 1<<30 {
+			gridSize <<= 1
+			continue
+		}
+
+		// The lastest call passed the desired execution time, so now
+		// calculate what the ideal work size should be.
+		adj := float64(gridSize) * (float64(timeToAchieve) / float64(execTime))
+		adj /= 256.0
+		adjMultiple256 := uint32(math.Ceil(adj))
+		gridSize = adjMultiple256 * 256
+
+		// Clamp the gridsize if it will cause the nonce to overflow an
+		// uint32 (allowing this would cause duplicated hashing effort).
+		if bits.Len32(threadCount-1)+bits.Len32(gridSize-1) > 32 {
+			gridSize = 1 << (32 - bits.Len32(threadCount-1))
+		}
+
+		// Size it to the nearest multiple of 32 for best CUDA performance.
+		gridSize = gridSize - (gridSize % 32)
+		if gridSize < 32 {
+			gridSize = 32
+		}
+
+		break
+	}
+
+	return gridSize, nil
+}
 func newMinerDevs(m *Miner) (*Miner, int, error) {
 	deviceListIndex := 0
 	deviceListEnabledCount := 0
