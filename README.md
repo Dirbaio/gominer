@@ -6,28 +6,58 @@ and stratum/pool mining using OpenCL devices.
 
 ## Downloading
 
-Linux and Windows 64-bit binaries may be downloaded from:
+Binaries are not currently available.  See the [Building](#building)
+([Windows](#windows), [Linux](#linux)) section for details on how to build
+`gominer` from source.
 
-[https://github.com/decred/decred-binaries/releases/latest](https://github.com/decred/decred-binaries/releases/latest)
+## Configuring `gominer`
+
+`gominer` needs to acquire work in order to have something to solve.  Currently, the only supported method is solo mining via a `dcrd` RPC server.  There are plans to support [dcrpool](https://github.com/decred/dcrpool) for pooled mining in the future.
+
+In order to communicate with the `dcrd` RPC server, `gominer` must be configured
+with `dcrd`'s RPC server credentials.
+
+- Obtain the RPC username and password by finding the `rpcuser` and `rpcpass`
+  entries in the `dcrd.conf` file
+  - Windows: `%LOCALAPPDATA%\Dcrd\dcrd.conf`
+  - Linux: `~/.dcrd/dcrd.conf`
+  - MacOs: `~/Library/Application Support/Dcrd/dcrd.conf`
+- Create a `gominer.conf` file at the platform-specific path that contains the
+  **exact same** `rpcuser=` and `rpcpass=` lines you obtained from the
+  `dcrd.conf` file in the previous step
+  - Windows: `%LOCALAPPDATA%\Gominer\gominer.conf`
+  - Linux: `~/.gominer/gominer.conf`
+  - MacOS: `~/Library/Application Support/Gominer/gominer.conf`
+  - The `gominer.conf` config file should have at least the following lines:
+  ```
+  rpcuser=<same rpcuser from dcrd.conf>
+  rpcpass=<same rpcpass from dcrd.conf>
+  ```
+
+Next, `dcrd` must be configured with a mining address to send the payment for
+mined blocks.  That is accomplished by either launching `dcrd` with the
+`--miningaddr=Ds...` CLI flag or adding a `miningaddr=Ds...` to the
+aforementioned `dcrd.conf` file and restarting `dcrd`.
 
 ## Running
 
-Benchmark mode:
+### Benchmark mode
+
+`gominer` provides a benchmark mode where no work is submitted in order to test
+your setup.
 
 ```
-gominer -B
+./gominer -B
 ```
 
-Solo mining on mainnet using dcrd running on the local host:
+### Solo Mining on Mainnet
+
+Ensure you have [configured](#configuring-gominer) `gominer` with `dcrd`'s RPC
+credentials as well as `dcrd` with a `miningaddr`.  Once the credentials and
+mining address have been configured, simply run gominer to begin mining.
 
 ```
-gominer -u myusername -P hunter2
-```
-
-Stratum/pool mining:
-
-```
-gominer -o stratum+tcp://pool:port -m username -n password
+./gominer
 ```
 
 ## Status API
@@ -94,16 +124,17 @@ generally speaking, you will need the latest AMDGPU-PRO display drivers for
 AMD cards and the latest NVIDIA graphics display drivers for NVIDIA cards.
 
 You will also need the OpenCL headers which is typically named something
-similar to `mesa-opencl-dev` (for AMD) or `nvidia-opencl-dev` for NVIDIA.
+similar to `mesa-opencl-dev` (for AMD) or `nvidia-opencl-dev` (for NVIDIA).
 
 If you're using OpenCL, it is also recommended to install your distribution's
-equivalent of the `clinfo` package if you have any issues to ensure your
-device can be detected by OpenCL.
+equivalent of the `clinfo` package if you have any issues to ensure your device
+can be detected by OpenCL.  When `clinfo` is unable to detect your device,
+`gominer` will not be able to either.
 
 The following sections provide instructions for the following combinations:
 
-* OpenCL for NVIDIA on Ubuntu 23.04
-* OpenCL for AMD on Debian Bookworm
+* [OpenCL for NVIDIA on Ubuntu 23.04](#opencl-with-nvidia-on-ubuntu-2304)
+* [OpenCL for AMD on Debian Bookworm](#opencl-with-amd-on-debian-bookworm)
 
 #### OpenCL Build Instructions (Works with Both NVIDIA and AMD)
 
@@ -114,7 +145,7 @@ The following sections provide instructions for the following combinations:
 - Install the NVIDIA graphics driver
   - **If you agree with the recommended drivers**
     - `sudo ubuntu-drivers autoinstall`
-  - **Alternatively, install a specific driver (forr example)**
+  - **Alternatively, install a specific driver (for example)**
     - `sudo apt install nvidia-driver-525-server`
 - Reboot to allow the graphics driver to load
   - `sudo reboot`
@@ -125,15 +156,16 @@ The following sections provide instructions for the following combinations:
 - Build `gominer`
   - `cd gominer`
   - `go build -tags opencl`
-- Test `gominer` detects your GPU
+- Test `gominer` detects your GPU(s)
   - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 ##### OpenCL with AMD on Debian Bookworm
 
 - Enable the non-free (closed source) repository by using your favorite editor
   to modify `/etc/apt/sources.list` and appending `contrib non-free` to the
   `deb` respoitory
-  - `$EDITOR /etc/apt/sources.list``
+  - `$EDITOR /etc/apt/sources.list`
     - It should look similar to the following
       ```
       deb http://ftp.us.debian.org/debian bookworm-updates main contrib non-free
@@ -150,8 +182,9 @@ The following sections provide instructions for the following combinations:
 - Build `gominer`
   - `cd gominer`
   - `go build -tags opencl`
-- Test `gominer` detects your GPU
+- Test `gominer` detects your GPU(s)
   - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 #### CUDA Build Instructions (NVIDIA only)
 
@@ -178,29 +211,32 @@ date**.
   - `git clone https://github.com/decred/gominer`
 - **Close the `MSYS2 MINGW64` shell and relaunch it**
   - NOTE: This is necessary to ensure all of the new environment variables are set properly
-- Go to the appropriate section for either NVIDIA or AMD depending on which type of GPU you have
+- Jump to the appropriate section for either [NVIDIA](#opencl-with-nvidia) or
+  [AMD](#opencl-with-amd) depending on which type of GPU you have
 
 ##### OpenCL with NVIDIA
 
 - Build gominer
   - `cd ~/gominer`
   - `go build -tags opencl`
-- Test `gominer` detects your GPU
+- Test `gominer` detects your GPU(s)
   - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 ##### OpenCL with AMD
 
 - Change to the library directory C:\appsdk\lib\x86_64
   * `cd /c/appsdk/lib/x86_64`
-- Copy and prepare the ADL library for linking
+- Copy and prepare the AMD Display Library (ADL) for linking
   - `cp /c/Windows/SysWOW64/atiadlxx.dll .`
   - `gendef atiadlxx.dll`
   - `dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def`
 - Build gominer
   - `cd ~/gominer`
   - `go build -tags opencl`
-- Test `gominer` detects your GPU
+- Test `gominer` detects your GPU(s)
   - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 #### CUDA Build Instructions (NVIDIA only)
 
