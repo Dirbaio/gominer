@@ -118,23 +118,54 @@ go build -tags opencladl
 
 ### Windows
 
-#### Pre-Requisites
+#### OpenCL Build Instructions (Works with Both NVIDIA and AMD)
 
-- Download and install the official Go Windows binaries from [https://golang.dl/](https://golang.org/dl/)
-- Download and install Git for Windows from [https://git-for-windows.github.io/](https://git-for-windows.github.io/)
-  * Make sure to select the Git-Bash option when prompted
-- Download the MinGW-w64 installer from [https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win32/Personal Builds/mingw-builds/installer/](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win32/Personal%20Builds/mingw-builds/installer/)
-  * Select the x64 toolchain and use defaults for the other questions
-- `git clone https://github.com/decred/gominer`
+##### OpenCL Pre-Requisites
 
-#### Build Instructions
+- Download and install [MSYS2](https://www.msys2.org/)
+  - Make sure you uncheck `Run MSYS2 now.`
+- Launch the `MSYS2 MINGW64` shell from the start menu
+  - NOTE: The `MSYS2` installer will launch the `UCRT64` shell by default if
+    you didn't uncheck `Run MSYS2 now` as instructed.  That shell will not work,
+    so close it if you forgot to uncheck it in the installer.
+- From within the `MSYS2 MINGW64` shell enter the following commands to install
+  `gcc`, `git`, `go`, `unzip`, and the `gominer` source code
+  - `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-tools mingw-w64-x86_64-go git unzip`
+  - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
+  - `unzip -d /c/appsdk lightOCLSDK.zip`
+  - `git clone https://github.com/decred/gominer`
+- **Close the `MSYS2 MINGW64` and relaunch it**
+  - NOTE: This is necessary to ensure all of the new environment variables are set properly
+- Go to the appropriate section for either NVIDIA or AMD depending on which type of GPU you have
 
-##### CUDA
+###### OpenCL with NVIDIA
 
-**NOTE**: The CUDA version of the Blake3 gominer is not yet compatible to
-windows.
+- Build gominer
+  - `cd ~/gominer`
+  - `go build -tags opencl`
+- Test `gominer` detects your GPU
+  - `./gominer -l`
 
-###### Pre-Requisites
+##### OpenCL with AMD
+
+- Change to the library directory C:\appsdk\lib\x86_64
+  * `cd /c/appsdk/lib/x86_64`
+- Copy and prepare the ADL library for linking
+  - `cp /c/Windows/SysWOW64/atiadlxx.dll .`
+  - `gendef atiadlxx.dll`
+  - `dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def`
+- Build gominer
+  - `cd ~/gominer`
+  - `go build -tags opencl`
+- Test `gominer` detects your GPU
+  - `./gominer -l`
+
+#### CUDA Build Instructions (NVIDIA only)
+
+**NOTE**: The CUDA version of the Blake3 gominer is not yet compatible with
+Windows.
+
+##### Pre-Requisites
 
 - Download Microsoft Visual Studio 2013 from [https://www.microsoft.com/en-us/download/details.aspx?id=44914](https://www.microsoft.com/en-us/download/details.aspx?id=44914)
 - Add `C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin` to your PATH
@@ -148,27 +179,3 @@ windows.
 - Copy dependencies:
   * ```copy obj/decred.dll .```
   * ```copy nvidia/NVSMI/nvml.dll .```
-
-##### OpenCL/ADL
-
-###### Pre-Requisites
-
-- Download OpenCL SDK from [https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/tag/1.0](https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/tag/1.0)
-- Unzip or untar the downloaded `lightOCLSDK` archive to `C:\appsdk`
-  * Ensure the folders `C:\appsdk\include` and `C:\appsdk\lib` are populated
-- Change to the library directory C:\appsdk\lib\x86_64
-  * `cd /D C:\appsdk\lib\x86_64`
-- Copy and prepare the ADL library for linking
-  * `copy c:\Windows\SysWOW64\atiadlxx.dll .`
-  * `gendef atiadlxx.dll`
-  * `dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def`
-
-###### Steps
-
-- For OpenCL:
-  * `cd gominer`
-  * `go build -tags opencl`
-
-- For OpenCL with AMD Device Library (ADL) support:
-  * `cd gominer`
-  * `go build -tags opencladl`
