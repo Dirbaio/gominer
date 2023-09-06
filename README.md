@@ -134,11 +134,11 @@ go build -tags opencladl
   - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
   - `unzip -d /c/appsdk lightOCLSDK.zip`
   - `git clone https://github.com/decred/gominer`
-- **Close the `MSYS2 MINGW64` and relaunch it**
+- **Close the `MSYS2 MINGW64` shell and relaunch it**
   - NOTE: This is necessary to ensure all of the new environment variables are set properly
 - Go to the appropriate section for either NVIDIA or AMD depending on which type of GPU you have
 
-###### OpenCL with NVIDIA
+##### OpenCL with NVIDIA
 
 - Build gominer
   - `cd ~/gominer`
