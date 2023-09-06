@@ -1,8 +1,9 @@
 # gominer
 
 gominer is an application for performing Proof-of-Work (PoW) mining on the
-Decred network after the activation of DCP0011 using BLAKE3.  It supports solo
-and stratum/pool mining using OpenCL devices.
+Decred network after the activation of
+[DCP0011](https://github.com/decred/dcps/blob/master/dcp-0011/dcp-0011.mediawiki)
+using BLAKE3.  It supports solo mining using OpenCL and CUDA devices.
 
 ## Downloading
 
@@ -108,12 +109,12 @@ $ curl http://localhost:3333/
 
 #### Preliminaries
 
-Gominer works with both OpenCL (both AMD and NVIDIA) and CUDA (NVIDIA only).
-At the current time, most users have reported that OpenCL gives them higher
-hashrates on NVIDIA.
+Gominer works with OpenCL (both AMD and NVIDIA) and CUDA (NVIDIA only).  At the
+current time, most users have reported that OpenCL gives them higher hashrates
+on NVIDIA.
 
 **NOTE: Although gominer works with CUDA, there are not any build instructions
-yet.  The will be provided at a later date**.
+yet.  They will be provided at a later date**.
 
 Once you decide on OpenCL or CUDA, you will need to install the
 graphics driver for your GPU as well as the headers for OpenCL or CUDA
@@ -131,7 +132,7 @@ equivalent of the `clinfo` package if you have any issues to ensure your device
 can be detected by OpenCL.  When `clinfo` is unable to detect your device,
 `gominer` will not be able to either.
 
-The following sections provide instructions for the following combinations:
+The following sections provide instructions for these combinations:
 
 * [OpenCL for NVIDIA on Ubuntu 23.04](#opencl-with-nvidia-on-ubuntu-2304)
 * [OpenCL for AMD on Debian Bookworm](#opencl-with-amd-on-debian-bookworm)
@@ -149,7 +150,7 @@ The following sections provide instructions for the following combinations:
     - `sudo apt install nvidia-driver-525-server`
 - Reboot to allow the graphics driver to load
   - `sudo reboot`
-- Install the OpenCL headers, `git` adnd `go`
+- Install the OpenCL headers, `git` and `go`
   - `sudo apt install nvidia-opencl-dev git golang`
 - Obtain the `gominer` source code
   - `git clone https://github.com/decred/gominer`
@@ -164,7 +165,7 @@ The following sections provide instructions for the following combinations:
 
 - Enable the non-free (closed source) repository by using your favorite editor
   to modify `/etc/apt/sources.list` and appending `contrib non-free` to the
-  `deb` respoitory
+  `deb` repository
   - `$EDITOR /etc/apt/sources.list`
     - It should look similar to the following
       ```
@@ -172,10 +173,10 @@ The following sections provide instructions for the following combinations:
       deb http://security.debian.org bookworm-security main contrib non-free
       ```
 - Update the Apt package manager with the new sources
-  - `apt update`
+  - `sudo apt update`
 - Install the AMD graphics driver and supporting firmware
-  - `apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
-- Install the OpenCL headers, `git` adnd `go`
+  - `sudo apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
+- Install the OpenCL headers, `git` and `go`
   - `sudo apt install mesa-opencl-dev git golang`
 - Obtain the `gominer` source code
   - `git clone https://github.com/decred/gominer`
