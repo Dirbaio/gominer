@@ -19,48 +19,48 @@
 
 __global__
 void search(
-    uint *output,
+    uint32_t *output,
     // Midstate.
-    const uint cv0,
-    const uint cv1,
-    const uint cv2,
-    const uint cv3,
-    const uint cv4,
-    const uint cv5,
-    const uint cv6,
-    const uint cv7,
+    const uint32_t cv0,
+    const uint32_t cv1,
+    const uint32_t cv2,
+    const uint32_t cv3,
+    const uint32_t cv4,
+    const uint32_t cv5,
+    const uint32_t cv6,
+    const uint32_t cv7,
 
     // Final 52 bytes of data.
-    const uint m0,
-    const uint m1,
-    const uint m2,
-    // const uint m3 : nonce
-    const uint m4,
-    const uint m5,
-    const uint m6,
-    const uint m7,
-    const uint m8,
-    const uint m9,
-    const uint m10,
-    const uint m11,
-    const uint m12)
+    const uint32_t m0,
+    const uint32_t m1,
+    const uint32_t m2,
+    // const uint32_t m3 : nonce
+    const uint32_t m4,
+    const uint32_t m5,
+    const uint32_t m6,
+    const uint32_t m7,
+    const uint32_t m8,
+    const uint32_t m9,
+    const uint32_t m10,
+    const uint32_t m11,
+    const uint32_t m12)
 {
     // Nonce.
-    const uint m3 = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t m3 = blockDim.x * blockIdx.x + threadIdx.x;
 
     // BLAKE3 init vectors.
-    const uint iv0 = 0x6a09e667ul;
-    const uint iv1 = 0xbb67ae85ul;
-    const uint iv2 = 0x3c6ef372ul;
-    const uint iv3 = 0xa54ff53aul;
-    // const uint iv4 = 0x510e527ful;
-    // const uint iv5 = 0x9b05688cul;
-    // const uint iv6 = 0x1f83d9abul;
-    // const uint iv7 = 0x5be0cd19ul;
+    const uint32_t iv0 = 0x6a09e667ul;
+    const uint32_t iv1 = 0xbb67ae85ul;
+    const uint32_t iv2 = 0x3c6ef372ul;
+    const uint32_t iv3 = 0xa54ff53aul;
+    // const uint32_t iv4 = 0x510e527ful;
+    // const uint32_t iv5 = 0x9b05688cul;
+    // const uint32_t iv6 = 0x1f83d9abul;
+    // const uint32_t iv7 = 0x5be0cd19ul;
 
     // Internal compression func state.
-    uint v0, v1, v2, v3, v4, v5, v6, v7;
-    uint v8, v9, v10, v11, v12, v13, v14, v15;
+    uint32_t v0, v1, v2, v3, v4, v5, v6, v7;
+    uint32_t v8, v9, v10, v11, v12, v13, v14, v15;
 
     // Do the initialization and first round together.
     // Round 1.
@@ -160,7 +160,7 @@ void search(
         return;
 
     // Update nonce.
-    uint pos = atomicInc(&output[0], 0xffffffff)+1;
+    uint32_t pos = atomicInc(&output[0], 0xffffffff)+1;
     if (pos > MAX_OUTPUT_RESULTS) return; // Bounds check output buffer.
     output[pos] = m3;
 }
