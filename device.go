@@ -1,23 +1,38 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 package main
 
 import (
+	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
+	"fmt"
+	"io"
 	"sync/atomic"
 	"time"
 
 	"github.com/decred/dcrd/blockchain/standalone/v2"
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
-
-	"github.com/decred/gominer/blake256"
+	"github.com/decred/gominer/blake3"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
 
 var chainParams = chaincfg.MainNetParams()
+var deviceLibraryInitialized = false // nolint:unused
+
+// randDeviceOffset1 and randDeviceOffset2 are random offsets to use for all
+// devices so each process ends up with a random starting point for all devices.
+var randDeviceOffset1, randDeviceOffset2 uint8
+
+func init() {
+	var buf [2]byte
+	if _, err := io.ReadFull(rand.Reader, buf[:]); err != nil {
+		panic(err)
+	}
+	randDeviceOffset1 = buf[0]
+	randDeviceOffset2 = buf[1]
+}
 
 // Constants for fan and temperature bits
 const (
@@ -44,6 +59,43 @@ const (
 	TargetNone                = "None"
 )
 
+// initNonces initialize the nonces for the device such that each device in the
+// same system is doing different work while also helping prevent collisions
+// across multiple processes and systems working on the same template.
+func (d *Device) initNonces() error {
+	// Read cryptographically random data for use below in setting the initial
+	// nonces.
+	var buf [8]byte
+	if _, err := io.ReadFull(rand.Reader, buf[:]); err != nil {
+		return fmt.Errorf("unable to read random value: %w", err)
+	}
+	extraNonceRandOffset := binary.LittleEndian.Uint32(buf[0:])
+	extraNonce2RandOffset := binary.LittleEndian.Uint32(buf[4:])
+
+	// Set the initial extra nonce as follows:
+	// - The first byte is the device ID offset by the first per-process random
+	//   device offset
+	// - The remaining 3 bytes are a per-device random extra nonce offset
+	//
+	// This, when coupled with the second per-process random device offset set
+	// elsewhere, ensures each device in the same system is doing different work
+	// (up to 65536 devices) while also helping prevent collisions across
+	// multiple processes and systems working on the same template.
+	deviceOffset := (uint32(d.index) + uint32(randDeviceOffset1)) % 255
+	d.extraNonce = deviceOffset<<24 | extraNonceRandOffset&0x00ffffff
+
+	// Set the current work ID to a random initial value.
+	//
+	// The current work ID is also treated as a secondary extra nonce and thus,
+	// when combined with the extra nonce above, the result is that the pair
+	// effectively acts as an 8-byte randomized extra nonce.
+	d.currentWorkID = extraNonce2RandOffset
+
+	minrLog.Debugf("DEV #%d: initial extraNonce %x, initial workID: %x",
+		d.index, d.extraNonce, d.currentWorkID)
+	return nil
+}
+
 func (d *Device) updateCurrentWork() {
 	var w *work.Work
 	if d.hasWork {
@@ -67,28 +119,28 @@ func (d *Device) updateCurrentWork() {
 	d.hasWork = true
 
 	d.work = *w
-	minrLog.Tracef("pre-nonce: %v", hex.EncodeToString(d.work.Data[:]))
+	minrLog.Tracef("pre-nonce: %x", d.work.Data[:])
 
-	// Bump and set the work ID if the work is new.
+	// Bump and set the work ID.
 	d.currentWorkID++
 	binary.LittleEndian.PutUint32(d.work.Data[128+4*work.Nonce2Word:],
 		d.currentWorkID)
 
-	// Reset the hash state
-	copy(d.midstate[:], blake256.IV256[:])
+	// Set additional byte with the device id offset by a second per-process
+	// random device offset to support up to 65536 devices.
+	deviceID := uint8((uint32(d.index) + uint32(randDeviceOffset2)) % 255)
+	d.work.Data[128+4*work.Nonce3Word] = deviceID
 
-	// Hash the two first blocks
-	blake256.Block(d.midstate[:], d.work.Data[0:64], 512)
-	blake256.Block(d.midstate[:], d.work.Data[64:128], 1024)
-	minrLog.Tracef("midstate input data for work update %v",
-		hex.EncodeToString(d.work.Data[0:128]))
+	// Hash the two first blocks.
+	d.midstate = blake3.Block(blake3.IV, d.work.Data[0:64], blake3.FlagChunkStart)
+	d.midstate = blake3.Block(d.midstate, d.work.Data[64:128], 0)
+	minrLog.Tracef("midstate input data for work update %x", d.work.Data[0:128])
 
 	// Convert the next block to uint32 array.
 	for i := 0; i < 16; i++ {
-		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4 : 132+i*4])
+		d.lastBlock[i] = binary.LittleEndian.Uint32(d.work.Data[128+i*4:])
 	}
-	minrLog.Tracef("work data for work update: %v",
-		hex.EncodeToString(d.work.Data[:]))
+	minrLog.Tracef("work data for work update: %x", d.work.Data)
 }
 
 func (d *Device) Run() {
@@ -271,17 +323,17 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
 
-	binary.BigEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
-	binary.BigEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
-	binary.BigEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
-	hash := chainhash.HashH(data[0:180])
+	binary.LittleEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
+	hash := chainhash.Hash(blake3.FinalBlock(d.midstate, data[128:180]))
 
 	// Hashes that reach this logic and fail the minimal proof of
 	// work check are considered to be hardware errors.
 	hashNum := standalone.HashToBig(&hash)
 	if hashNum.Cmp(chainParams.PowLimit) > 0 {
-		minrLog.Errorf("DEV #%d Hardware error found, hash %v above "+
-			"minimum target %064x", d.index, hash, d.work.Target.Bytes())
+		minrLog.Errorf("DEV #%d: Hardware error found, hash %v above "+
+			"minimum target %064x", d.index, hash, chainParams.PowLimit)
 		d.invalidShares++
 		return
 	}
@@ -291,10 +343,10 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	if !cfg.Benchmark {
 		// Assess versus the pool or daemon target.
 		if hashNum.Cmp(d.work.Target) > 0 {
-			minrLog.Debugf("DEV #%d Hash %v bigger than target %032x (boo)",
-				d.index, hash, d.work.Target.Bytes())
+			minrLog.Debugf("DEV #%d: Hash %v bigger than target %064x (boo)",
+				d.index, hash, d.work.Target)
 		} else {
-			minrLog.Infof("DEV #%d Found hash with work below target! %v (yay)",
+			minrLog.Infof("DEV #%d: Found hash with work below target! %v (yay)",
 				d.index, hash)
 			d.validShares++
 			d.workDone <- data

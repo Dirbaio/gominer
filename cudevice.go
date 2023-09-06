@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 //go:build cuda && !opencl
 // +build cuda,!opencl
@@ -274,12 +274,12 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 }
 
 func (d *Device) runDevice() error {
-	// Bump the extraNonce for the device it's running on
-	// when you begin mining. This ensures each GPU is doing
-	// different work. If the extraNonce has already been
-	// set for valid work, restore that.
-	d.extraNonce += uint32(d.index) << 24
-	d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
+	// Initialize the nonces for the device such that each device in the same
+	// system is doing different work while also helping prevent collisions
+	// across multiple processes and systems working on the same template.
+	if err := d.initNonces(); err != nil {
+		return err
+	}
 
 	// Need to have this stuff here for a device vs thread issue.
 	runtime.LockOSThread()
@@ -317,7 +317,7 @@ func (d *Device) runDevice() error {
 
 		// Increment extraNonce.
 		util.RolloverExtraNonce(&d.extraNonce)
-		d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
+		d.lastBlock[work.Nonce1Word] = d.extraNonce
 
 		copy(endianData[:], d.work.Data[:128])
 		for i, j := 128, 0; i < 180; {
@@ -336,7 +336,7 @@ func (d *Device) runDevice() error {
 			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
 			ts = d.work.JobTime + diffSeconds
 		}
-		d.lastBlock[work.TimestampWord] = util.Uint32EndiannessSwap(ts)
+		d.lastBlock[work.TimestampWord] = ts
 
 		nonceResultsHSlice[0] = 0
 
@@ -360,14 +360,10 @@ func (d *Device) runDevice() error {
 
 		numResults := nonceResultsHSlice[0]
 		for i, result := range nonceResultsHSlice[1 : 1+numResults] {
-			// lol seelog
-			i := i
-			result := result
 			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
 				"extraNonce %08x, workID %08x, timestamp %08x",
 				d.index, i, result, d.lastBlock[work.Nonce1Word],
-				util.Uint32EndiannessSwap(d.currentWorkID),
-				d.lastBlock[work.TimestampWord])
+				d.currentWorkID, d.lastBlock[work.TimestampWord])
 
 			// Assess the work. If it's below target, it'll be rejected
 			// here. The mining algorithm currently sends this function any

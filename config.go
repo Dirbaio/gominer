@@ -1,5 +1,5 @@
 // Copyright (c) 2013-2015 The btcsuite developers
-// Copyright (c) 2015-2016 The Decred developers
+// Copyright (c) 2015-2023 The Decred developers
 
 package main
 
@@ -25,7 +25,7 @@ const (
 	defaultLogLevel       = "info"
 	defaultLogDirname     = "logs"
 	defaultLogFilename    = "gominer.log"
-	defaultClKernel       = "blake256.cl"
+	defaultClKernel       = "blake3.cl"
 )
 
 var (

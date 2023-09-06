@@ -1,8 +1,8 @@
 # gominer
 
 gominer is an application for performing Proof-of-Work (PoW) mining on the
-Decred network.  It supports solo and stratum/pool mining using CUDA and
-OpenCL devices.
+Decred network after the activation of DCP0011 using BLAKE3.  It supports solo
+and stratum/pool mining using OpenCL devices.
 
 ## Downloading
 
@@ -78,18 +78,21 @@ $ curl http://localhost:3333/
 
 #### Pre-Requisites
 
+NOTE: The CUDA support has NOT been updated yet for BLAKE3.  Matheus is working
+on adding support, so this section hasn't been modified, but it is out of date.
+
 You will either need to install CUDA for NVIDIA graphics cards or OpenCL
 library/headers that support your device such as: AMDGPU-PRO (for newer AMD
 cards), Beignet (for Intel Graphics), or Catalyst (for older AMD cards).
 
-For example, on Ubuntu 16.04 you can install the necessary OpenCL packages (for
+For example, on Ubuntu 23.04 you can install the necessary OpenCL packages (for
 Intel Graphics) and CUDA libraries with:
 
 ```
 sudo apt-get install beignet-dev nvidia-cuda-dev nvidia-cuda-toolkit
 ```
 
-gominer has been built successfully on Ubuntu 16.04 with go1.11,
+gominer has been built successfully on Ubuntu 23.04 with go1.21.0,
 g++ 5.4.0, and beignet-dev 1.1.1-2 although other combinations should work as
 well.
 
@@ -98,11 +101,8 @@ well.
 To download and build gominer, run:
 
 ```
-go get github.com/decred/gominer
-cd $GOPATH/src/github.com/decred/gominer
+git clone https://github.com/decred/gominer
 cd gominer
-
-env GO111MODULE=on go build
 ```
 
 For CUDA with NVIDIA Management Library (NVML) support:
@@ -129,18 +129,7 @@ go build -tags opencladl
   * Make sure to select the Git-Bash option when prompted
 - Download the MinGW-w64 installer from [https://sourceforge.net/projects/mingw-w64/files/Toolchains targetting Win32/Personal Builds/mingw-builds/installer/](https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win32/Personal%20Builds/mingw-builds/installer/)
   * Select the x64 toolchain and use defaults for the other questions
-- Set the environment variable GOPATH to `C:\Users\username\go`
-- Check that the GOROOT environment variable is set to C:\Go
-  * This should have been done by the Go installer
-- Add the following locations to your PATH: `C:\Users\username\go\bin;C:\Go\bin`
-- Add `C:\Program Files\mingw-w64\x84_64-6.2.0-posix-seh-rt_v5-rev1\mingw64\bin` to your PATH (This is the latest release as of 2016-09-29)
-- `go get github.com/decred/gominer`
-  * Compilation will most likely fail which can be safely ignored for now.
-- Change to the gominer directory
-  * If using the Windows Command Prompt:
-  ```cd %GOPATH%/src/github.com/decred/gominer```
-  * If using git-bash
-  ```cd $GOPATH/src/github.com/decred/gominer```
+- `git clone https://github.com/decred/gominer`
 
 #### Build Instructions
 
@@ -165,21 +154,22 @@ go build -tags opencladl
 
 ###### Pre-Requisites
 
-- Download AMD APP SDK v3.0 from [http://developer.amd.com/tools-and-sdks/opencl-zone/amd-accelerated-parallel-processing-app-sdk/](http://developer.amd.com/tools-and-sdks/opencl-zone/amd-accelerated-parallel-processing-app-sdk/)
-  * Samples may be unselected from the install to save space as only the libraries and headers are needed
-- Copy or Move `C:\Program Files (x86)\AMD APP SDK\3.0` to `C:\appsdk`
+- Download OpenCL SDK from [https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/tag/1.0](https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/releases/tag/1.0)
+- Unzip or untar the downloaded `lightOCLSDK` archive to `C:\appsdk`
   * Ensure the folders `C:\appsdk\include` and `C:\appsdk\lib` are populated
 - Change to the library directory C:\appsdk\lib\x86_64
-  * ```cd C:\appsdk\lib\x86_64```
+  * `cd /D C:\appsdk\lib\x86_64`
 - Copy and prepare the ADL library for linking
-  * ```copy c:\Windows\SysWOW64\atiadlxx.dll .```
-  * ```gendef atiadlxx.dll```
-  * ```dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def```
+  * `copy c:\Windows\SysWOW64\atiadlxx.dll .`
+  * `gendef atiadlxx.dll`
+  * `dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def`
 
 ###### Steps
 
 - For OpenCL:
-  * ```go build -tags opencl```
+  * `cd gominer`
+  * `go build -tags opencl`
 
 - For OpenCL with AMD Device Library (ADL) support:
-  * ```go build -tags opencladl```
+  * `cd gominer`
+  * `go build -tags opencladl`

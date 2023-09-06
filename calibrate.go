@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 //go:build !cuda
 // +build !cuda
@@ -107,7 +107,7 @@ func (d *Device) calcWorkSizeForMilliseconds(ms int) (uint32, error) {
 
 		// If we fail to go above the desired execution time, double
 		// the work size and try again.
-		if execTime < timeToAchieve {
+		if execTime < timeToAchieve && workSize < 1<<30 {
 			workSize <<= 1
 			continue
 		}

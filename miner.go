@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 package main
 
@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/crypto/blake256"
 	"github.com/decred/gominer/stratum"
 	"github.com/decred/gominer/work"
 )
@@ -33,8 +35,6 @@ func NewMiner() (*Miner, error) {
 		quit:             make(chan struct{}),
 		needsWorkRefresh: make(chan struct{}),
 	}
-
-	m.devices = make([]*Device, 0)
 
 	// If needed, start pool code.
 	if cfg.Pool != "" && !cfg.Benchmark {
@@ -76,8 +76,8 @@ func (m *Miner) workSubmitThread() {
 				} else {
 					if accepted {
 						atomic.AddUint64(&m.validShares, 1)
-						minrLog.Debugf("Submitted work successfully: %v",
-							accepted)
+						minrLog.Infof("Submitted work successfully: block hash %v",
+							chainhash.Hash(blake256.Sum256(data[:180])))
 					} else {
 						atomic.AddUint64(&m.invalidShares, 1)
 					}

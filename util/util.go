@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 package util
 
@@ -96,15 +96,14 @@ func Uint32EndiannessSwap(v uint32) uint32 {
 
 // FormatHashRate sets the units properly when displaying a hashrate.
 func FormatHashRate(h float64) string {
-	if h > 1000000000 {
-		return fmt.Sprintf("%.3fGH/s", h/1000000000)
-	} else if h > 1000000 {
-		return fmt.Sprintf("%.0fMH/s", h/1000000)
-	} else if h > 1000 {
-		return fmt.Sprintf("%.1fkH/s", h/1000)
-	} else if h == 0 {
-		return "0H/s"
+	const unit = 1000
+	if h < unit {
+		return fmt.Sprintf("%.0f h/s", h)
 	}
-
-	return fmt.Sprintf("%.1f GH/s", h)
+	div, exp := float64(unit), 0
+	for n := h / unit; n >= unit && exp < 6; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %ch/s", h/div, "kMGTPEZ"[exp])
 }

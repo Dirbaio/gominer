@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 //go:build opencladl && !cuda && !opencl
 // +build opencladl,!cuda,!opencl
@@ -214,8 +214,11 @@ func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
 	var numDevices cl.CL_uint
 	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, 0, nil,
 		&numDevices)
-	if status != cl.CL_SUCCESS {
+	if status != cl.CL_SUCCESS && status != cl.CL_DEVICE_NOT_FOUND {
 		return nil, clError(status, "CLGetDeviceIDs")
+	}
+	if numDevices == 0 {
+		return nil, nil
 	}
 	devices := make([]cl.CL_device_id, numDevices)
 	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices,
@@ -460,12 +463,12 @@ func (d *Device) runDevice() error {
 	minrLog.Infof("Started DEV #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
 
-	// Bump the extraNonce for the device it's running on
-	// when you begin mining. This ensures each device is doing
-	// different work. If the extraNonce has already been
-	// set for valid work, restore that.
-	d.extraNonce += uint32(d.index) << 24
-	d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
+	// Initialize the nonces for the device such that each device in the same
+	// system is doing different work while also helping prevent collisions
+	// across multiple processes and systems working on the same template.
+	if err := d.initNonces(); err != nil {
+		return err
+	}
 
 	var status cl.CL_int
 	for {
@@ -479,7 +482,7 @@ func (d *Device) runDevice() error {
 
 		// Increment extraNonce.
 		util.RolloverExtraNonce(&d.extraNonce)
-		d.lastBlock[work.Nonce1Word] = util.Uint32EndiannessSwap(d.extraNonce)
+		d.lastBlock[work.Nonce1Word] = d.extraNonce
 
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
@@ -488,7 +491,7 @@ func (d *Device) runDevice() error {
 			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
 			ts = d.work.JobTime + diffSeconds
 		}
-		d.lastBlock[work.TimestampWord] = util.Uint32EndiannessSwap(ts)
+		d.lastBlock[work.TimestampWord] = ts
 
 		// arg 0: pointer to the buffer
 		obuf := d.outputBuffer
@@ -556,8 +559,7 @@ func (d *Device) runDevice() error {
 			minrLog.Debugf("DEV #%d: Found candidate %v nonce %08x, "+
 				"extraNonce %08x, workID %08x, timestamp %08x",
 				d.index, i+1, outputData[i+1], d.lastBlock[work.Nonce1Word],
-				util.Uint32EndiannessSwap(d.currentWorkID),
-				d.lastBlock[work.TimestampWord])
+				d.currentWorkID, d.lastBlock[work.TimestampWord])
 
 			// Assess the work. If it's below target, it'll be rejected
 			// here. The mining algorithm currently sends this function any
@@ -613,7 +615,6 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 		}
 	}
 	return m, deviceListEnabledCount, nil
-
 }
 
 func getDeviceInfo(id cl.CL_device_id,

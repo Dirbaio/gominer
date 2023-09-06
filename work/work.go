@@ -12,6 +12,7 @@ const (
 	Nonce0Word    = 3
 	Nonce1Word    = 4
 	Nonce2Word    = 5
+	Nonce3Word    = 6
 )
 
 // NewWork is the constructor for Work.
