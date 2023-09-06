@@ -76,45 +76,87 @@ $ curl http://localhost:3333/
 
 ### Linux
 
-#### Pre-Requisites
+#### Preliminaries
 
-You will either need to install CUDA for NVIDIA graphics cards or OpenCL
-library/headers that support your device such as: AMDGPU-PRO (for newer AMD
-cards), Beignet (for Intel Graphics), or Catalyst (for older AMD cards).
+Gominer works with both OpenCL (both AMD and NVIDIA) and CUDA (NVIDIA only).
+At the current time, most users have reported that OpenCL gives them higher
+hashrates on NVIDIA.
 
-For example, on Ubuntu 23.04 you can install the necessary OpenCL packages (for
-Intel Graphics) and CUDA libraries with:
+**NOTE: Although gominer works with CUDA, there are not any build instructions
+yet.  The will be provided at a later date**.
 
-```
-sudo apt-get install nvidia-cuda-dev nvidia-cuda-toolkit
-```
+Once you decide on OpenCL or CUDA, you will need to install the
+graphics driver for your GPU as well as the headers for OpenCL or CUDA
+depending on your choice.
 
-gominer has been built successfully on Ubuntu 23.04 with go1.21.0,
-g++ 5.4.0 although other combinations should work as well.
+The exact packages are dependent on the specific Linux distribution, but,
+generally speaking, you will need the latest AMDGPU-PRO display drivers for
+AMD cards and the latest NVIDIA graphics display drivers for NVIDIA cards.
 
-#### Instructions
+You will also need the OpenCL headers which is typically named something
+similar to `mesa-opencl-dev` (for AMD) or `nvidia-opencl-dev` for NVIDIA.
 
-To download and build gominer, run:
+If you're using OpenCL, it is also recommended to install your distribution's
+equivalent of the `clinfo` package if you have any issues to ensure your
+device can be detected by OpenCL.
 
-```
-git clone https://github.com/decred/gominer
-cd gominer
-```
+The following sections provide instructions for the following combinations:
 
-For CUDA with NVIDIA Management Library (NVML) support:
-```
-make
-```
+* OpenCL for NVIDIA on Ubuntu 23.04
+* OpenCL for AMD on Debian Bookworm
 
-For OpenCL (autodetects AMDGPU support):
-```
-go build -tags opencl
-```
+#### OpenCL Build Instructions (Works with Both NVIDIA and AMD)
 
-For OpenCL with AMD Device Library (ADL) support:
-```
-go build -tags opencladl
-```
+##### OpenCL with NVIDIA on Ubuntu 23.04
+
+- Detect the model of your NVIDIA GPU and the recommended driver
+  - `ubuntu-drivers devices`
+- Install the NVIDIA graphics driver
+  - **If you agree with the recommended drivers**
+    - `sudo ubuntu-drivers autoinstall`
+  - **Alternatively, install a specific driver (forr example)**
+    - `sudo apt install nvidia-driver-525-server`
+- Reboot to allow the graphics driver to load
+  - `sudo reboot`
+- Install the OpenCL headers, `git` adnd `go`
+  - `sudo apt install nvidia-opencl-dev git golang`
+- Obtain the `gominer` source code
+  - `git clone https://github.com/decred/gominer`
+- Build `gominer`
+  - `cd gominer`
+  - `go build -tags opencl`
+- Test `gominer` detects your GPU
+  - `./gominer -l`
+
+##### OpenCL with AMD on Debian Bookworm
+
+- Enable the non-free (closed source) repository by using your favorite editor
+  to modify `/etc/apt/sources.list` and appending `contrib non-free` to the
+  `deb` respoitory
+  - `$EDITOR /etc/apt/sources.list``
+    - It should look similar to the following
+      ```
+      deb http://ftp.us.debian.org/debian bookworm-updates main contrib non-free
+      deb http://security.debian.org bookworm-security main contrib non-free
+      ```
+- Update the Apt package manager with the new sources
+  - `apt update`
+- Install the AMD graphics driver and supporting firmware
+  - `apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
+- Install the OpenCL headers, `git` adnd `go`
+  - `sudo apt install mesa-opencl-dev git golang`
+- Obtain the `gominer` source code
+  - `git clone https://github.com/decred/gominer`
+- Build `gominer`
+  - `cd gominer`
+  - `go build -tags opencl`
+- Test `gominer` detects your GPU
+  - `./gominer -l`
+
+#### CUDA Build Instructions (NVIDIA only)
+
+**Build instructions are not available yet.  They will be provided at a later
+date**.
 
 ### Windows
 
@@ -129,7 +171,7 @@ go build -tags opencladl
     you didn't uncheck `Run MSYS2 now` as instructed.  That shell will not work,
     so close it if you forgot to uncheck it in the installer.
 - From within the `MSYS2 MINGW64` shell enter the following commands to install
-  `gcc`, `git`, `go`, `unzip`, and the `gominer` source code
+  `gcc`, `git`, `go`, `unzip`, the light OpenCL SDK, and the `gominer` source code
   - `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-tools mingw-w64-x86_64-go git unzip`
   - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
   - `unzip -d /c/appsdk lightOCLSDK.zip`
@@ -162,20 +204,5 @@ go build -tags opencladl
 
 #### CUDA Build Instructions (NVIDIA only)
 
-**NOTE**: The CUDA version of the Blake3 gominer is not yet compatible with
+**NOTE**: The CUDA version of the `gominer` is not yet compatible with
 Windows.
-
-##### Pre-Requisites
-
-- Download Microsoft Visual Studio 2013 from [https://www.microsoft.com/en-us/download/details.aspx?id=44914](https://www.microsoft.com/en-us/download/details.aspx?id=44914)
-- Add `C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin` to your PATH
-- Install CUDA 7.0 from [https://developer.nvidia.com/cuda-toolkit-70](https://developer.nvidia.com/cuda-toolkit-70)
-- Add `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v7.0\bin` to your PATH
-
-###### Steps
-- Using git-bash:
-  * ```cd $GOPATH/src/github.com/decred/gominer```
-  * ```mingw32-make.exe```
-- Copy dependencies:
-  * ```copy obj/decred.dll .```
-  * ```copy nvidia/NVSMI/nvml.dll .```
