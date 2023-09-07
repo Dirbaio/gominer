@@ -178,8 +178,10 @@ The following sections provide instructions for these combinations:
   - `sudo apt update`
 - Install the AMD graphics driver and supporting firmware
   - `sudo apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
-- Install the OpenCL headers, `git` and `go`
-  - `sudo apt install mesa-opencl-dev git golang`
+- Install the OpenCL headers, OpenCL Installable Client driver, OpenCL lib, `git` and `go`
+  - `sudo apt install opencl-headers mesa-opencl-icd ocl-icd-libopencl1 git golang`
+- Help the loader find the OpenCL library by creating a symbolic link to it:
+  - `ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1 /usr/lib/libOpenCL.so`
 - Obtain the `gominer` source code
   - `git clone https://github.com/decred/gominer`
 - Build `gominer`
