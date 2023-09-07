@@ -45,15 +45,14 @@ func ReverseToInt(s string) (int32, error) {
 
 // RevHash reverses a hash in string format.
 func RevHash(hash string) string {
-	revHash := ""
-	for i := 0; i < 7; i++ {
-		j := i * 8
-		part := fmt.Sprintf("%c%c%c%c%c%c%c%c",
-			hash[6+j], hash[7+j], hash[4+j], hash[5+j],
-			hash[2+j], hash[3+j], hash[0+j], hash[1+j])
-		revHash += part
+	rev := []rune(hash)
+	for i := 0; i <= len(rev)/2-2; i += 2 {
+		opp := len(rev) - 2 - i
+		rev[i], rev[opp] = rev[opp], rev[i]
+		rev[i+1], rev[opp+1] = rev[opp+1], rev[i+1]
 	}
-	return revHash
+
+	return string(rev)
 }
 
 // DiffToTarget converts a whole number difficulty into a target.
