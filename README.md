@@ -5,6 +5,8 @@ Decred network after the activation of
 [DCP0011](https://github.com/decred/dcps/blob/master/dcp-0011/dcp-0011.mediawiki)
 using BLAKE3.  It supports solo mining using OpenCL and CUDA devices.
 
+[User Reported Hashrates](#user-reported-hashrates)
+
 ## Downloading
 
 Binaries are not currently available.  See the [Building](#building)
@@ -243,3 +245,24 @@ date**.
 
 **NOTE**: The CUDA version of the `gominer` is not yet compatible with
 Windows.
+
+## User Reported Hashrates
+
+### OpenCL
+
+GPU                    | Hashrate
+-----------------------|---------
+NVIDIA GTX 1060        | 3.0 Gh/s
+AMD RX 580             | 3.7 Gh/s
+NVIDIA 1660 Super      | 5.0 Gh/s
+AMD Vega 56            | 7.0 Gh/s
+NVIDIA RTX 3060 Ti     | 8.7 Gh/s
+NVIDIA GTX 3080 Mobile | 9.4 Gh/s
+NVIDIA RTX 3070        | 10.1 Gh/s
+NVIDIA RTX 2080        | 10.4 Gh/s
+NVIDIA Tesla V100      | 13.9 Gh/s
+NVIDIA Tesla V100S     | 14.6 Gh/s
+NVIDIA RTX 4070        | 14.9 Gh/s
+NVIDIA RTX 3080        | 15.2 Gh/s
+NVIDIA RTX 3090        | 17.6 Gh/s
+AMD 7900 XTX           | 27.2 Gh/s
