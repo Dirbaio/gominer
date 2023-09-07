@@ -870,11 +870,11 @@ func (s *Stratum) PrepWork() error {
 
 	// Serialize header.
 	bh := wire.BlockHeader{}
-	v, err := util.ReverseToInt(s.PoolWork.Version)
+	v, err := hex.DecodeString(s.PoolWork.Version)
 	if err != nil {
 		return err
 	}
-	bh.Version = v
+	bh.Version = int32(binary.LittleEndian.Uint32(v))
 
 	nbits, err := hex.DecodeString(s.PoolWork.Nbits)
 	if err != nil {
