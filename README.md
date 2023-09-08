@@ -115,33 +115,44 @@ Gominer works with OpenCL (both AMD and NVIDIA) and CUDA (NVIDIA only).  At the
 current time, most users have reported that OpenCL gives them higher hashrates
 on NVIDIA.
 
-**NOTE: Although gominer works with CUDA, there are not any build instructions
-yet.  They will be provided at a later date**.
-
 Once you decide on OpenCL or CUDA, you will need to install the
 graphics driver for your GPU as well as the headers for OpenCL or CUDA
 depending on your choice.
 
 The exact packages are dependent on the specific Linux distribution, but,
-generally speaking, you will need the latest AMDGPU-PRO display drivers for
-AMD cards and the latest NVIDIA graphics display drivers for NVIDIA cards.
+generally speaking, you will need the latest AMDGPU-PRO display drivers for AMD
+cards and the latest NVIDIA graphics display drivers for NVIDIA cards.  Then,
+depending on whether you will build the OpenCL or CUDA version, the specific set
+of toolsets, headers and libraries will have to be installed.
 
-You will also need the OpenCL headers which is typically named something
-similar to `mesa-opencl-dev` (for AMD) or `nvidia-opencl-dev` (for NVIDIA).
+For OpenCL, the packages are typically named something similar to
+`mesa-opencl-dev` (for AMD) or `nvidia-opencl-dev` (for NVIDIA).
 
 If you're using OpenCL, it is also recommended to install your distribution's
 equivalent of the `clinfo` package if you have any issues to ensure your device
 can be detected by OpenCL.  When `clinfo` is unable to detect your device,
 `gominer` will not be able to either.
 
-The following sections provide instructions for these combinations:
+For CUDA, on distributions where it is available via the standard package
+manager, the required files are usually found as `nvidia-cuda-toolkit`.  NVIDIA
+also provides its own [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads)
+downloads.
 
-* [OpenCL for NVIDIA on Ubuntu 23.04](#opencl-with-nvidia-on-ubuntu-2304)
-* [OpenCL for AMD on Debian Bookworm](#opencl-with-amd-on-debian-bookworm)
+The following sections provide instructions for building various combinations
+of `gominer`:
 
-#### OpenCL Build Instructions (Works with Both NVIDIA and AMD)
+* [NVIDIA on Ubuntu 23.04](#nvidia-on-ubuntu-2304)
+* [Debian Bookworm](#debian-bookworm)
 
-##### OpenCL with NVIDIA on Ubuntu 23.04
+#### NVIDIA on Ubuntu 23.04
+
+This section provides instructions for building `gominer` on a computer with an
+NVIDIA graphics card running Ubuntu 23.04.  Both OpenCL and CUDA build
+instructions are provided.
+
+##### Pre-requisites
+
+The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 
 - Detect the model of your NVIDIA GPU and the recommended driver
   - `ubuntu-drivers devices`
@@ -150,12 +161,20 @@ The following sections provide instructions for these combinations:
     - `sudo ubuntu-drivers autoinstall`
   - **Alternatively, install a specific driver (for example)**
     - `sudo apt install nvidia-driver-525-server`
+- Install the basic development tools `git` and `go`
+  - `sudo apt install git golang`
 - Reboot to allow the graphics driver to load
   - `sudo reboot`
-- Install the OpenCL headers, `git` and `go`
-  - `sudo apt install nvidia-opencl-dev git golang`
 - Obtain the `gominer` source code
   - `git clone https://github.com/decred/gominer`
+- Jump to the appropriate section for either
+  [OpenCL](#opencl-on-ubuntu) or [CUDA](#cuda-on-ubuntu) 
+  depending on which GPU library you want to build `gominer` for.
+
+###### OpenCL on Ubuntu
+
+- Install the OpenCL headers
+  - `sudo apt install nvidia-opencl-dev`
 - Build `gominer`
   - `cd gominer`
   - `go build -tags opencl`
@@ -163,7 +182,24 @@ The following sections provide instructions for these combinations:
   - `./gominer -l`
 - You may now [configure and run](#configuring-gominer) `gominer`
 
-##### OpenCL with AMD on Debian Bookworm
+###### CUDA on Ubuntu
+
+- Install the NVIDIA CUDA Toolkit:
+  - `sudo apt install nvidia-cuda-toolkit`
+- Build `gominer`:
+  - `cd gominer`
+  - `go generate -tags cuda .`
+- Test `gominer` detects your GPU(s):
+  - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
+
+#### Debian Bookworm
+
+This section provides instructions for building `gominer` on a computer running
+Debian bookworm.  Both OpenCL (using either AMD or an NVIDIA graphics cards)
+and CUDA (NVIDIA graphics cards only) build instructions are provided.
+
+##### Pre-requisites
 
 - Enable the non-free (closed source) repository by using your favorite editor
   to modify `/etc/apt/sources.list` and appending `contrib non-free` to the
@@ -176,14 +212,32 @@ The following sections provide instructions for these combinations:
       ```
 - Update the Apt package manager with the new sources
   - `sudo apt update`
-- Install the AMD graphics driver and supporting firmware
-  - `sudo apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
-- Install the OpenCL headers, OpenCL Installable Client driver, OpenCL lib, `git` and `go`
-  - `sudo apt install opencl-headers mesa-opencl-icd ocl-icd-libopencl1 git golang`
-- Help the loader find the OpenCL library by creating a symbolic link to it:
-  - `ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1 /usr/lib/libOpenCL.so`
+- Install the basic development tools `git` and `go`:
+  - `sudo apt install git golang`
 - Obtain the `gominer` source code
   - `git clone https://github.com/decred/gominer`
+
+Proceed to install the appropriate graphics card driver and supporting firmware,
+based on the hardware available on the computer:
+
+- For AMD GPUs: Install the AMD graphics driver and supporting firmware
+  - `sudo apt install firmware-linux firmware-linux-nonfree libdrm-amdgpu1 xserver-xorg-video-amdgpu`
+- For NVIDIA GPUs: Install the NVIDIA graphics driver:
+  - `sudo apt install nvidia-driver`
+- Restart the computer to ensure the driver is loaded
+- Jump to the appropriate section for either
+  [OpenCL](#opencl-on-debian) or [CUDA](#cuda-on-debian) 
+  depending on which GPU library you want to build `gominer` for.
+
+
+###### OpenCL on Debian
+
+This build mode supports both AMD and NVIDIA graphics cards.
+
+- Install the OpenCL headers, OpenCL Installable Client driver and OpenCL lib
+  - `sudo apt install opencl-headers mesa-opencl-icd ocl-icd-libopencl1`
+- Help the loader find the OpenCL library by creating a symbolic link to it:
+  - `ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1 /usr/lib/libOpenCL.so`
 - Build `gominer`
   - `cd gominer`
   - `go build -tags opencl`
@@ -191,16 +245,26 @@ The following sections provide instructions for these combinations:
   - `./gominer -l`
 - You may now [configure and run](#configuring-gominer) `gominer`
 
-#### CUDA Build Instructions (NVIDIA only)
 
-**Build instructions are not available yet.  They will be provided at a later
-date**.
+###### CUDA on Debian
+
+Note that this requires having an NVIDIA graphics card installed on the
+computer.
+
+- Install the NVIDIA CUDA Toolkit:
+  - `sudo apt install nvidia-cuda-toolkit`
+- Build `gominer`:
+  - `cd gominer`
+  - `go generate -tags cuda .`
+- Test `gominer` detects your GPU(s):
+  - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 ### Windows
 
-#### OpenCL Build Instructions (Works with Both NVIDIA and AMD)
+#### Windows Pre-requisites
 
-##### OpenCL Pre-Requisites
+The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 
 - Download and install [MSYS2](https://www.msys2.org/)
   - Make sure you uncheck `Run MSYS2 now.`
@@ -209,15 +273,26 @@ date**.
     you didn't uncheck `Run MSYS2 now` as instructed.  That shell will not work,
     so close it if you forgot to uncheck it in the installer.
 - From within the `MSYS2 MINGW64` shell enter the following commands to install
-  `gcc`, `git`, `go`, `unzip`, the light OpenCL SDK, and the `gominer` source code
+  `gcc`, `git`, `go`, `unzip`:
   - `pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-tools mingw-w64-x86_64-go git unzip`
-  - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
-  - `unzip -d /c/appsdk lightOCLSDK.zip`
   - `git clone https://github.com/decred/gominer`
 - **Close the `MSYS2 MINGW64` shell and relaunch it**
   - NOTE: This is necessary to ensure all of the new environment variables are set properly
-- Jump to the appropriate section for either [NVIDIA](#opencl-with-nvidia) or
-  [AMD](#opencl-with-amd) depending on which type of GPU you have
+- Jump to the appropriate section for either
+  [OpenCL](#opencl-pre-requisites-on-windows), or [CUDA with NVIDIA](#cuda-with-nvidia) 
+  depending on which type of GPU you have
+
+##### OpenCL Pre-requisites on Windows
+
+The following is needed when performing an OpenCL build:
+
+- Still in the `MSYS2 MINGW64` shell enter the following commands to install 
+  the light OpenCL SDK:
+  - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
+  - `unzip -d /c/appsdk lightOCLSDK.zip`
+- Jump to the appropriate section for either [OpenCL with NVIDIA](#opencl-with-nvidia),
+  or [OpenCL with AMD](#opencl-with-amd) depending on which type of GPU you have
+
 
 ##### OpenCL with NVIDIA
 
@@ -243,10 +318,36 @@ date**.
   - `./gominer -l`
 - You may now [configure and run](#configuring-gominer) `gominer`
 
-#### CUDA Build Instructions (NVIDIA only)
+#### CUDA with NVIDIA
 
-**NOTE**: The CUDA version of the `gominer` is not yet compatible with
-Windows.
+Building the CUDA-enabled `gominer` on a Windows platform is tricky, requires
+several GB worth of downloads and while we have made attempts at detecting the
+necessary tools and automating the building process, it is not guaranteed to
+work, in particular as newer or older versions of the various tools are
+installed.
+
+This guide has been tested on a Windows 10 machine, with an NVIDIA graphics card
+installed, using Microsoft Visual Studio Community Edition 2022 and NVIDIA CUDA
+Toolkit version 12.2.  If the automatic builder for `gominer` does not work on
+your system, you many need to [manually setup the various
+tools](/docs/cuda-manual-windows-build.md).
+
+After fulfilling the [Windows pre-requisites](#windows-pre-requisites), follow 
+the following instructions:
+
+- Download and install the appropriate NVIDIA driver
+  - https://www.nvidia.com/download/index.aspx
+- Download and install the NVIDIA CUDA Toolkit:
+  - https://developer.nvidia.com/cuda-toolkit
+- Download and install Microsoft Visual Studio:
+  - https://visualstudio.microsoft.com/vs/community/
+  - Ensure the "Desktop Development with C++" component will be installed
+- Build gominer:
+  - `go generate -tags cuda .`
+  - The warnings about deprecated symbols are safe to ignore
+- Test `gominer` detects your GPU(s):
+  - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
 
 ## User Reported Hashrates
 
@@ -267,4 +368,4 @@ NVIDIA Tesla V100S     | 14.6 Gh/s
 NVIDIA RTX 4070        | 14.9 Gh/s
 NVIDIA RTX 3080        | 15.2 Gh/s
 NVIDIA RTX 3090        | 17.6 Gh/s
-AMD 7900 XTX           | 27.2 Gh/s
+AMD 7900 XTX           | 23.8 Gh/s
