@@ -5,8 +5,16 @@
 
 package main
 
+// The following go:generate directive produces the appropriate intermediate
+// library with the Blake3 CUDA kernel for use with gominer as a result of
+// executing `go generate -tags cuda .`.
+//go:generate go run -tags "cudabuilder" cuda_builder.go
+
 /*
 #include "decred.h"
+
+#cgo !windows LDFLAGS: obj/blake3.a
+#cgo windows LDFLAGS: -L. -lblake3
 */
 import "C"
 
