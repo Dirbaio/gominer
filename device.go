@@ -35,7 +35,7 @@ func init() {
 	randDeviceOffset2 = buf[1]
 }
 
-// Constants for fan and temperature bits
+// Constants for fan and temperature bits.
 const (
 	ADLFanFailSafe            = uint32(80)
 	AMDGPUFanFailSafe         = uint32(204)
@@ -150,7 +150,7 @@ func (d *Device) Run(ctx context.Context) {
 	}
 }
 
-// This is pretty hacky/proof-of-concepty
+// This is pretty hacky/proof-of-concepty.
 func (d *Device) fanControl() {
 	d.Lock()
 	defer d.Unlock()
@@ -388,7 +388,7 @@ func (d *Device) PrintStats() {
 	}
 }
 
-// UpdateFanTemp updates a device's statistics
+// UpdateFanTemp updates a device's statistics.
 func (d *Device) UpdateFanTemp() {
 	d.Lock()
 	defer d.Unlock()

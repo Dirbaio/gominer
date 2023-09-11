@@ -61,7 +61,7 @@ func amdgpuFanPercentToValue(percent uint32) uint32 {
 	return value
 }
 
-// validate that we can write to the AMDGPU sysfs fan path
+// validate that we can write to the AMDGPU sysfs fan path.
 func amdgpuFanPermissionsValid(index int) error {
 	path := amdgpuGetSysfsPath(index, "fan")
 

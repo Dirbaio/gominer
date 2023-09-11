@@ -94,7 +94,7 @@ const (
 	RequestTimeout     int = 5
 )
 
-// GetWork makes a getwork RPC call and returns the result (data and target)
+// GetWork makes a getwork RPC call and returns the result (data and target).
 func GetWork() (*work.Work, error) {
 	// Generate a request to the configured RPC server.
 	protocol := "http"
@@ -178,12 +178,12 @@ func GetWork() (*work.Work, error) {
 	return w, nil
 }
 
-// GetPoolWork gets work from a stratum enabled pool
+// GetPoolWork gets work from a stratum enabled pool.
 func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
-	// Get Next work for stratum and mark it as used
+	// Get Next work for stratum and mark it as used.
 	if pool.PoolWork.NewWork {
 		poolLog.Debug("Received new work from pool.")
-		// Mark used
+		// Mark used.
 		pool.PoolWork.NewWork = false
 
 		if pool.PoolWork.JobID == "" {
@@ -209,7 +209,7 @@ func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 	return nil, fmt.Errorf("no work available")
 }
 
-// GetWork makes a getwork RPC call and returns the result (data and target)
+// GetWork makes a getwork RPC call and returns the result (data and target).
 func GetWorkSubmit(data []byte) (bool, error) {
 	// Generate a request to the configured RPC server.
 	protocol := "http"
@@ -268,7 +268,7 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	return res.Result, nil
 }
 
-// GetPoolWorkSubmit sends the result to the stratum enabled pool
+// GetPoolWorkSubmit sends the result to the stratum enabled pool.
 func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
 	pool.Lock()
 	defer pool.Unlock()
