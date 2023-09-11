@@ -262,16 +262,6 @@ func commaListToInts(s string) ([]int, error) {
 	return res, nil
 }
 
-// ithOrFirstInt returns s[index] if len(s) > index or s[0] if not.
-//
-//nolint:unused
-func ithOrFirstInt(s []int, index int) int {
-	if index < len(s) {
-		return s[index]
-	}
-	return s[0]
-}
-
 // loadConfig initializes and parses the config using a config file and command
 // line options.
 //

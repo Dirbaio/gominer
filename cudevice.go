@@ -118,6 +118,14 @@ func deviceStats(index int) (uint32, uint32) {
 	return fanPercent, temperature
 }
 
+// ithOrFirstInt returns s[index] if len(s) > index or s[0] if not.
+func ithOrFirstInt(s []int, index int) int {
+	if index < len(s) {
+		return s[index]
+	}
+	return s[0]
+}
+
 // unsupported -- just here for compilation
 func fanControlSet(index int, fanCur uint32, tempTargetType string,
 	fanChangeLevel string) {
