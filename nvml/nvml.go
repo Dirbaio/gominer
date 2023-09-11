@@ -143,12 +143,12 @@ func DeviceMemoryInformation(dh DeviceHandle) (MemoryInformation, error) {
 }
 
 type PCIInformation struct {
-	BusId       string `json:"bus_id"`
+	BusID       string `json:"bus_id"`
 	Domain      uint   `json:"domain"`
 	Bus         uint   `json:"bus"`
 	Device      uint   `json:"device"`
-	DeviceId    uint   `json:"device_id"`
-	SubSystemId uint   `json:"subsystem_id"`
+	DeviceID    uint   `json:"device_id"`
+	SubSystemID uint   `json:"subsystem_id"`
 }
 
 func DevicePCIInformation(dh DeviceHandle) (PCIInformation, error) {
@@ -156,13 +156,13 @@ func DevicePCIInformation(dh DeviceHandle) (PCIInformation, error) {
 	r := NewResult(C.nvmlDeviceGetPciInfo(dh.handle, &temp))
 	if r == nil {
 		res := PCIInformation{
-			BusId: string(C.GoBytes(unsafe.Pointer(&temp.busId),
+			BusID: string(C.GoBytes(unsafe.Pointer(&temp.busId),
 				C.NVML_DEVICE_PCI_BUS_ID_BUFFER_SIZE)),
 			Domain:      uint(temp.domain),
 			Bus:         uint(temp.bus),
 			Device:      uint(temp.device),
-			DeviceId:    uint(temp.pciDeviceId),
-			SubSystemId: uint(temp.pciSubSystemId),
+			DeviceID:    uint(temp.pciDeviceId),
+			SubSystemID: uint(temp.pciSubSystemId),
 		}
 		return res, nil
 	}
