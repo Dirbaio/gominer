@@ -10,10 +10,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -46,7 +47,7 @@ func newHTTPClient(cfg *config) (*http.Client, error) {
 	// Configure TLS if needed.
 	var tlsConfig *tls.Config
 	if !cfg.NoTLS && cfg.RPCCert != "" {
-		pem, err := ioutil.ReadFile(cfg.RPCCert)
+		pem, err := os.ReadFile(cfg.RPCCert)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +126,7 @@ func GetWork() (*work.Work, error) {
 		return nil, err
 	}
 
-	body, err := ioutil.ReadAll(httpResponse.Body)
+	body, err := io.ReadAll(httpResponse.Body)
 	httpResponse.Body.Close()
 	if err != nil {
 		err = fmt.Errorf("error reading json reply: %w", err)
@@ -242,7 +243,7 @@ func GetWorkSubmit(data []byte) (bool, error) {
 		return false, err
 	}
 
-	body, err := ioutil.ReadAll(httpResponse.Body)
+	body, err := io.ReadAll(httpResponse.Body)
 	httpResponse.Body.Close()
 	if err != nil {
 		err = fmt.Errorf("error reading json reply: %w", err)

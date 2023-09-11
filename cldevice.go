@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"runtime"
@@ -94,7 +93,7 @@ func amdgpuGetSysfsPath(index int, field string) string {
 	hwmonName := ""
 
 	// open hwmon base path and scan for the numbered entry
-	files, err := ioutil.ReadDir(hwmonBasePath)
+	files, err := os.ReadDir(hwmonBasePath)
 	if err != nil {
 		minrLog.Errorf("unable to read AMDGPU sysfs dir %v: %v", hwmonBasePath,
 			err)
@@ -314,7 +313,7 @@ func deviceStatsReadSysfsEntry(path string) uint32 {
 
 func deviceStatsWriteSysfsEntry(path string, value uint32) error {
 	stringValue := strconv.Itoa(int(value)) + "\n"
-	err := ioutil.WriteFile(path, []byte(stringValue), 0644)
+	err := os.WriteFile(path, []byte(stringValue), 0644)
 	if err != nil {
 		return fmt.Errorf("unable to write %v to %v: %w", value, path, err)
 	}
