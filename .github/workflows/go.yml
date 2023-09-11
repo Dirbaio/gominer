@@ -20,7 +20,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y beignet-dev nvidia-cuda-dev nvidia-cuda-toolkit ocl-icd-opencl-dev opencl-headers nvidia-opencl-dev
+          sudo apt-get install -y nvidia-cuda-dev nvidia-cuda-toolkit ocl-icd-opencl-dev opencl-headers nvidia-opencl-dev
       - name: Install Linters
         run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.53.3
       - name: Build OpenCL
