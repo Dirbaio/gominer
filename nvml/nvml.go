@@ -58,19 +58,14 @@ func (r Result) Error() string {
 }
 
 func (r Result) SuccessQ() bool {
-	if r.code == 0 {
-		return true
-	} else {
-		return false
-	}
+	return r.code == 0
 }
 
 func NewResult(r C.nvmlReturn_t) error {
 	if r == 0 {
 		return nil
-	} else {
-		return &Result{r}
 	}
+	return &Result{r}
 }
 
 func Init() error {
