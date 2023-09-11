@@ -26,9 +26,6 @@ jobs:
       - name: Build OpenCL
         env:
           CL_TARGET_OPENCL_VERSION: "220"
-
         run: go build -tags opencl ./...
-      - name: Lint
-        run: golangci-lint -c ./.golangci.yml run
-      - name: Test
-        run: go test -tags opencl -v ./...
+      - name: Test and Lint
+        run: ./run_tests.sh
