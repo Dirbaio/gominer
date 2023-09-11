@@ -24,7 +24,7 @@ func reverseS(s string) (string, error) {
 	a := strings.Split(s, "")
 	sRev := ""
 	if len(a)%2 != 0 {
-		return "", fmt.Errorf("Incorrect input length")
+		return "", fmt.Errorf("incorrect input length")
 	}
 	for i := 0; i < len(a); i += 2 {
 		tmp := []string{a[i], a[i+1], sRev}

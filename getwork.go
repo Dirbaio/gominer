@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 package main
 
@@ -133,7 +133,7 @@ func GetWork() (*work.Work, error) {
 	}
 
 	if httpResponse.Status != "200 OK" {
-		return nil, fmt.Errorf("HTTP %s: %s", httpResponse.Status, body)
+		return nil, fmt.Errorf("http status %s: %s", httpResponse.Status, body)
 	}
 
 	var res getWorkResponseJson
@@ -143,7 +143,7 @@ func GetWork() (*work.Work, error) {
 	}
 
 	if res.Error != nil {
-		return nil, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code,
+		return nil, fmt.Errorf("json error %d: %s", res.Error.Code,
 			res.Error.Message)
 	}
 
@@ -152,7 +152,7 @@ func GetWork() (*work.Work, error) {
 		return nil, err
 	}
 	if len(data) != 192 {
-		return nil, fmt.Errorf("Wrong data length: got %d, expected 192",
+		return nil, fmt.Errorf("wrong data length: got %d, expected 192",
 			len(data))
 	}
 	target, err := hex.DecodeString(res.Result.Target)
@@ -160,7 +160,7 @@ func GetWork() (*work.Work, error) {
 		return nil, err
 	}
 	if len(target) != 32 {
-		return nil, fmt.Errorf("Wrong target length: got %d, expected 32",
+		return nil, fmt.Errorf("wrong target length: got %d, expected 32",
 			len(target))
 	}
 
@@ -187,7 +187,7 @@ func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 		pool.PoolWork.NewWork = false
 
 		if pool.PoolWork.JobID == "" {
-			return nil, fmt.Errorf("No work available (no job id)")
+			return nil, fmt.Errorf("no work available (no job id)")
 		}
 
 		err := pool.PrepWork()
@@ -206,7 +206,7 @@ func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 		return pool.PoolWork.Work, nil
 	}
 
-	return nil, fmt.Errorf("No work available.")
+	return nil, fmt.Errorf("no work available")
 }
 
 // GetWork makes a getwork RPC call and returns the result (data and target)
@@ -261,7 +261,7 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	}
 
 	if res.Error != nil {
-		return false, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code,
+		return false, fmt.Errorf("json error %d: %s", res.Error.Code,
 			res.Error.Message)
 	}
 

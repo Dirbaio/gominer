@@ -50,7 +50,7 @@ func NewMiner() (*Miner, error) {
 	}
 
 	if deviceListEnabledCount == 0 {
-		return nil, fmt.Errorf("No devices started")
+		return nil, fmt.Errorf("no devices started")
 	}
 
 	m.started = uint32(time.Now().Unix())

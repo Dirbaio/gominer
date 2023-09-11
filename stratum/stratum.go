@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Decred developers.
+// Copyright (c) 2016-2023 The Decred developers.
 
 package stratum
 
@@ -34,7 +34,7 @@ import (
 var chainParams = chaincfg.MainNetParams()
 
 // ErrStratumStaleWork indicates that the work to send to the pool was stale.
-var ErrStratumStaleWork = fmt.Errorf("Stale work, throwing away")
+var ErrStratumStaleWork = errors.New("stale work, throwing away")
 
 // Stratum holds all the shared information for a stratum connection.
 // XXX most of these should be unexported and use getters/setters.
@@ -151,7 +151,7 @@ type Submit struct {
 }
 
 // errJsonType is an error for json that we do not expect.
-var errJsonType = errors.New("Unexpected type in json.")
+var errJsonType = errors.New("unexpected type in json")
 
 func sliceContains(s []uint64, e uint64) bool {
 	for _, a := range s {
@@ -188,7 +188,7 @@ func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string) 
 	if strings.HasPrefix(pool, proto) {
 		pool = strings.Replace(pool, proto, "", 1)
 	} else {
-		err := errors.New("Only stratum pools supported.")
+		err := errors.New("only stratum pools supported")
 		return nil, err
 	}
 	var conn net.Conn

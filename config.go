@@ -368,7 +368,7 @@ func loadConfig() (*config, []string, error) {
 			for i := range specifiedAutocalibrates {
 				j, err := strconv.Atoi(specifiedAutocalibrates[i])
 				if err != nil {
-					err := fmt.Errorf("Could not convert autocalibration "+
+					err := fmt.Errorf("could not convert autocalibration "+
 						"(%v) to int: %s", specifiedAutocalibrates[i],
 						err.Error())
 					fmt.Fprintln(os.Stderr, err)
@@ -382,7 +382,7 @@ func loadConfig() (*config, []string, error) {
 			cfg.AutocalibrateInts = make([]int, 1)
 			i, err := strconv.Atoi(cfg.Autocalibrate)
 			if err != nil {
-				err := fmt.Errorf("Could not convert autocalibration %v "+
+				err := fmt.Errorf("could not convert autocalibration %v "+
 					"to int: %s", cfg.Autocalibrate, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
@@ -404,7 +404,7 @@ func loadConfig() (*config, []string, error) {
 			for i := range specifiedDevices {
 				j, err := strconv.Atoi(specifiedDevices[i])
 				if err != nil {
-					err := fmt.Errorf("Could not convert device number %v "+
+					err := fmt.Errorf("could not convert device number %v "+
 						"(%v) to int: %s", i+1, specifiedDevices[i],
 						err.Error())
 					fmt.Fprintln(os.Stderr, err)
@@ -418,7 +418,7 @@ func loadConfig() (*config, []string, error) {
 			cfg.DeviceIDs = make([]int, 1)
 			i, err := strconv.Atoi(cfg.Devices)
 			if err != nil {
-				err := fmt.Errorf("Could not convert specified device %v "+
+				err := fmt.Errorf("could not convert specified device %v "+
 					"to int: %s", cfg.Devices, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
@@ -437,7 +437,7 @@ func loadConfig() (*config, []string, error) {
 			for i := range specifiedIntensities {
 				j, err := strconv.Atoi(specifiedIntensities[i])
 				if err != nil {
-					err := fmt.Errorf("Could not convert intensity "+
+					err := fmt.Errorf("could not convert intensity "+
 						"(%v) to int: %s", specifiedIntensities[i],
 						err.Error())
 					fmt.Fprintln(os.Stderr, err)
@@ -451,7 +451,7 @@ func loadConfig() (*config, []string, error) {
 			cfg.IntensityInts = make([]int, 1)
 			i, err := strconv.Atoi(cfg.Intensity)
 			if err != nil {
-				err := fmt.Errorf("Could not convert intensity %v "+
+				err := fmt.Errorf("could not convert intensity %v "+
 					"to int: %s", cfg.Intensity, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
@@ -464,8 +464,8 @@ func loadConfig() (*config, []string, error) {
 	for i := range cfg.IntensityInts {
 		if (cfg.IntensityInts[i] < minIntensity) ||
 			(cfg.IntensityInts[i] > maxIntensity) {
-			err := fmt.Errorf("Intensity %v not within "+
-				"range %v to %v.", cfg.IntensityInts[i], minIntensity,
+			err := fmt.Errorf("intensity %v not within "+
+				"range %v to %v", cfg.IntensityInts[i], minIntensity,
 				maxIntensity)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
@@ -489,7 +489,7 @@ func loadConfig() (*config, []string, error) {
 			for i := range specifiedTempTargets {
 				j, err := strconv.Atoi(specifiedTempTargets[i])
 				if err != nil {
-					err := fmt.Errorf("Could not convert temptarget "+
+					err := fmt.Errorf("could not convert temptarget "+
 						"(%v) to int: %s", specifiedTempTargets[i],
 						err.Error())
 					fmt.Fprintln(os.Stderr, err)
@@ -503,7 +503,7 @@ func loadConfig() (*config, []string, error) {
 			cfg.TempTargetInts = make([]uint32, 1)
 			i, err := strconv.Atoi(cfg.TempTarget)
 			if err != nil {
-				err := fmt.Errorf("Could not convert temptarget %v "+
+				err := fmt.Errorf("could not convert temptarget %v "+
 					"to int: %s", cfg.TempTarget, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
@@ -521,13 +521,13 @@ func loadConfig() (*config, []string, error) {
 
 	for i := range cfg.TempTargetInts {
 		if cfg.TempTargetInts[i] < minTempTarget {
-			err := fmt.Errorf("Temp target %v is lower than minimum %v",
+			err := fmt.Errorf("temp target %v is lower than minimum %v",
 				cfg.TempTargetInts[i], minTempTarget)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}
 		if cfg.TempTargetInts[i] > maxTempTarget {
-			err := fmt.Errorf("Temp target %v is higher than maximum %v",
+			err := fmt.Errorf("temp target %v is higher than maximum %v",
 				cfg.TempTargetInts[i], maxTempTarget)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
@@ -543,7 +543,7 @@ func loadConfig() (*config, []string, error) {
 			for i := range specifiedWorkSizes {
 				j, err := strconv.Atoi(specifiedWorkSizes[i])
 				if err != nil {
-					err := fmt.Errorf("Could not convert worksize "+
+					err := fmt.Errorf("could not convert worksize "+
 						"(%v) to int: %s", specifiedWorkSizes[i],
 						err.Error())
 					fmt.Fprintln(os.Stderr, err)
@@ -557,7 +557,7 @@ func loadConfig() (*config, []string, error) {
 			cfg.WorkSizeInts = make([]uint32, 1)
 			i, err := strconv.Atoi(cfg.WorkSize)
 			if err != nil {
-				err := fmt.Errorf("Could not convert worksize %v "+
+				err := fmt.Errorf("could not convert worksize %v "+
 					"to int: %s", cfg.WorkSize, err.Error())
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
@@ -569,19 +569,19 @@ func loadConfig() (*config, []string, error) {
 
 	for i := range cfg.WorkSizeInts {
 		if cfg.WorkSizeInts[i] < 256 {
-			err := fmt.Errorf("Too small WorkSize passed: %v, min 256",
+			err := fmt.Errorf("too small WorkSize passed: %v, min 256",
 				cfg.WorkSizeInts[i])
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}
 		if cfg.WorkSizeInts[i] > maxWorkSize {
-			err := fmt.Errorf("Too big WorkSize passed: %v, max %v",
+			err := fmt.Errorf("too big WorkSize passed: %v, max %v",
 				cfg.WorkSizeInts[i], maxWorkSize)
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err
 		}
 		if cfg.WorkSizeInts[i]%256 != 0 {
-			err := fmt.Errorf("Work size %v not a multiple of 256",
+			err := fmt.Errorf("work size %v not a multiple of 256",
 				cfg.WorkSizeInts[i])
 			fmt.Fprintln(os.Stderr, err)
 			return nil, nil, err

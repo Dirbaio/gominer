@@ -159,13 +159,13 @@ func getCUDevices() ([]cu.Device, error) {
 	minMinor := 5
 
 	if maj < minMajor || (maj == minMajor && min < minMinor) {
-		return nil, fmt.Errorf("Driver does not support CUDA %v.%v API", minMajor, minMinor)
+		return nil, fmt.Errorf("driver does not support CUDA %v.%v API", minMajor, minMinor)
 	}
 
 	var numDevices int
 	numDevices = cu.DeviceGetCount()
 	if numDevices < 1 {
-		return nil, fmt.Errorf("No devices found")
+		return nil, fmt.Errorf("no devices found")
 	}
 	devices := make([]cu.Device, numDevices)
 	for i := 0; i < numDevices; i++ {
