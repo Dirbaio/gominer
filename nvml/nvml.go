@@ -84,7 +84,7 @@ func ErrorString(r Result) string {
 }
 
 func DeviceCount() (int, error) {
-	var count C.uint = 0
+	var count C.uint
 	r := NewResult(C.nvmlDeviceGetCount(&count))
 	return int(count), r
 }
