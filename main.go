@@ -52,7 +52,7 @@ func gominerMain() error {
 	if cfg.CPUProfile != "" {
 		f, err := os.Create(cfg.CPUProfile)
 		if err != nil {
-			mainLog.Errorf("Unable to create cpu profile: %v", err.Error())
+			mainLog.Errorf("Unable to create cpu profile: %v", err)
 			return err
 		}
 		pprof.StartCPUProfile(f)

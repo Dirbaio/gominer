@@ -128,7 +128,7 @@ func GetWork() (*work.Work, error) {
 	body, err := ioutil.ReadAll(httpResponse.Body)
 	httpResponse.Body.Close()
 	if err != nil {
-		err = fmt.Errorf("error reading json reply: %v", err)
+		err = fmt.Errorf("error reading json reply: %w", err)
 		return nil, err
 	}
 
@@ -245,7 +245,7 @@ func GetWorkSubmit(data []byte) (bool, error) {
 	body, err := ioutil.ReadAll(httpResponse.Body)
 	httpResponse.Body.Close()
 	if err != nil {
-		err = fmt.Errorf("error reading json reply: %v", err)
+		err = fmt.Errorf("error reading json reply: %w", err)
 		return false, err
 	}
 

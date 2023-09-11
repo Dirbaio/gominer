@@ -71,7 +71,7 @@ func amdgpuFanPermissionsValid(index int) error {
 		if os.IsPermission(err) {
 			return fmt.Errorf("path %v is not writable", path)
 		} else {
-			return fmt.Errorf("path %v unusable %v", path, err)
+			return fmt.Errorf("path %v unusable %w", path, err)
 		}
 	}
 
@@ -155,7 +155,7 @@ func fanControlSet(index int, fanCur uint32, tempTargetType string,
 		fanNewValue, fanPath)
 	err := deviceStatsWriteSysfsEntry(fanPath, fanNewValue)
 	if err != nil {
-		minrLog.Errorf("DEV #%d unable to adjust fan: %v", index, err.Error())
+		minrLog.Errorf("DEV #%d unable to adjust fan: %v", index, err)
 	} else {
 		minrLog.Infof("DEV #%d successfully adjusted fan from %v%% to %v%% to "+
 			"%v temp", index, fanCur, fanNewPercent,
@@ -316,7 +316,7 @@ func deviceStatsWriteSysfsEntry(path string, value uint32) error {
 	stringValue := strconv.Itoa(int(value)) + "\n"
 	err := ioutil.WriteFile(path, []byte(stringValue), 0644)
 	if err != nil {
-		return fmt.Errorf("unable to write %v to %v: %v", value, path, err)
+		return fmt.Errorf("unable to write %v to %v: %w", value, path, err)
 	}
 
 	return nil
@@ -420,7 +420,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 	// Load kernel source.
 	progSrc, progSize, err := loadProgramSource(cfg.ClKernel)
 	if err != nil {
-		return nil, fmt.Errorf("could not load kernel source: %v", err)
+		return nil, fmt.Errorf("could not load kernel source: %w", err)
 	}
 
 	// Create the program.
@@ -708,14 +708,14 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 
 	platformIDs, err := getCLPlatforms()
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get CL platforms: %v", err)
+		return nil, 0, fmt.Errorf("could not get CL platforms: %w", err)
 	}
 
 	for p := range platformIDs {
 		platformID := platformIDs[p]
 		CLdeviceIDs, err := getCLDevices(platformID)
 		if err != nil {
-			return nil, 0, fmt.Errorf("could not get CL devices for platform: %v", err)
+			return nil, 0, fmt.Errorf("could not get CL devices for platform: %w", err)
 		}
 
 		for _, CLdeviceID := range CLdeviceIDs {

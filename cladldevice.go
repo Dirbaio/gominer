@@ -185,12 +185,12 @@ func getCLInfo() (cl.CL_platform_id, []cl.CL_device_id, error) {
 	var platformID cl.CL_platform_id
 	platformIDs, err := getCLPlatforms()
 	if err != nil {
-		return platformID, nil, fmt.Errorf("could not get CL platforms: %v", err)
+		return platformID, nil, fmt.Errorf("could not get CL platforms: %w", err)
 	}
 	platformID = platformIDs[0]
 	CLdeviceIDs, err := getCLDevices(platformID)
 	if err != nil {
-		return platformID, nil, fmt.Errorf("could not get CL devices for platform: %v", err)
+		return platformID, nil, fmt.Errorf("could not get CL devices for platform: %w", err)
 	}
 	return platformID, CLdeviceIDs, nil
 }
@@ -299,7 +299,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 	// Load kernel source.
 	progSrc, progSize, err := loadProgramSource(cfg.ClKernel)
 	if err != nil {
-		return nil, fmt.Errorf("could not load kernel source: %v", err)
+		return nil, fmt.Errorf("could not load kernel source: %w", err)
 	}
 
 	// Create the program.
@@ -580,14 +580,14 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 
 	platformIDs, err := getCLPlatforms()
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get CL platforms: %v", err)
+		return nil, 0, fmt.Errorf("could not get CL platforms: %w", err)
 	}
 
 	for p := range platformIDs {
 		platformID := platformIDs[p]
 		CLdeviceIDs, err := getCLDevices(platformID)
 		if err != nil {
-			return nil, 0, fmt.Errorf("could not get CL devices for platform: %v", err)
+			return nil, 0, fmt.Errorf("could not get CL devices for platform: %w", err)
 		}
 
 		for _, CLdeviceID := range CLdeviceIDs {

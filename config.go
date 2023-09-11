@@ -245,8 +245,7 @@ func commaListToInts(s string) ([]int, error) {
 		for i := range split {
 			j, err := strconv.Atoi(split[i])
 			if err != nil {
-				err := fmt.Errorf("item %q is not an int: %v"+
-					split[i], err)
+				err := fmt.Errorf("item %q is not an int: %w", split[i], err)
 				return nil, err
 			}
 			res[i] = j
@@ -254,7 +253,7 @@ func commaListToInts(s string) ([]int, error) {
 	} else {
 		i, err := strconv.Atoi(s)
 		if err != nil {
-			return nil, fmt.Errorf("%q is not an int: %v", s, err)
+			return nil, fmt.Errorf("%q is not an int: %w", s, err)
 		}
 		res = []int{i}
 	}
@@ -369,8 +368,7 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedAutocalibrates[i])
 				if err != nil {
 					err := fmt.Errorf("could not convert autocalibration "+
-						"(%v) to int: %s", specifiedAutocalibrates[i],
-						err.Error())
+						"(%v) to int: %w", specifiedAutocalibrates[i], err)
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -383,7 +381,7 @@ func loadConfig() (*config, []string, error) {
 			i, err := strconv.Atoi(cfg.Autocalibrate)
 			if err != nil {
 				err := fmt.Errorf("could not convert autocalibration %v "+
-					"to int: %s", cfg.Autocalibrate, err.Error())
+					"to int: %w", cfg.Autocalibrate, err)
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
@@ -405,8 +403,7 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedDevices[i])
 				if err != nil {
 					err := fmt.Errorf("could not convert device number %v "+
-						"(%v) to int: %s", i+1, specifiedDevices[i],
-						err.Error())
+						"(%v) to int: %w", i+1, specifiedDevices[i], err)
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -419,7 +416,7 @@ func loadConfig() (*config, []string, error) {
 			i, err := strconv.Atoi(cfg.Devices)
 			if err != nil {
 				err := fmt.Errorf("could not convert specified device %v "+
-					"to int: %s", cfg.Devices, err.Error())
+					"to int: %w", cfg.Devices, err)
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
@@ -438,8 +435,7 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedIntensities[i])
 				if err != nil {
 					err := fmt.Errorf("could not convert intensity "+
-						"(%v) to int: %s", specifiedIntensities[i],
-						err.Error())
+						"(%v) to int: %w", specifiedIntensities[i], err)
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -452,7 +448,7 @@ func loadConfig() (*config, []string, error) {
 			i, err := strconv.Atoi(cfg.Intensity)
 			if err != nil {
 				err := fmt.Errorf("could not convert intensity %v "+
-					"to int: %s", cfg.Intensity, err.Error())
+					"to int: %w", cfg.Intensity, err)
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
@@ -490,8 +486,7 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedTempTargets[i])
 				if err != nil {
 					err := fmt.Errorf("could not convert temptarget "+
-						"(%v) to int: %s", specifiedTempTargets[i],
-						err.Error())
+						"(%v) to int: %w", specifiedTempTargets[i], err)
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -504,7 +499,7 @@ func loadConfig() (*config, []string, error) {
 			i, err := strconv.Atoi(cfg.TempTarget)
 			if err != nil {
 				err := fmt.Errorf("could not convert temptarget %v "+
-					"to int: %s", cfg.TempTarget, err.Error())
+					"to int: %w", cfg.TempTarget, err)
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
@@ -544,8 +539,7 @@ func loadConfig() (*config, []string, error) {
 				j, err := strconv.Atoi(specifiedWorkSizes[i])
 				if err != nil {
 					err := fmt.Errorf("could not convert worksize "+
-						"(%v) to int: %s", specifiedWorkSizes[i],
-						err.Error())
+						"(%v) to int: %w", specifiedWorkSizes[i], err)
 					fmt.Fprintln(os.Stderr, err)
 					return nil, nil, err
 				}
@@ -558,7 +552,7 @@ func loadConfig() (*config, []string, error) {
 			i, err := strconv.Atoi(cfg.WorkSize)
 			if err != nil {
 				err := fmt.Errorf("could not convert worksize %v "+
-					"to int: %s", cfg.WorkSize, err.Error())
+					"to int: %w", cfg.WorkSize, err)
 				fmt.Fprintln(os.Stderr, err)
 				return nil, nil, err
 			}
@@ -612,7 +606,7 @@ func loadConfig() (*config, []string, error) {
 
 	// Parse, validate, and set debug log level(s).
 	if err := parseAndSetDebugLevels(cfg.DebugLevel); err != nil {
-		err := fmt.Errorf("%s: %v", funcName, err.Error())
+		err := fmt.Errorf("%s: %w", funcName, err)
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err
