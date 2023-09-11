@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -96,7 +97,7 @@ func (d *Device) initNonces() error {
 	return nil
 }
 
-func (d *Device) updateCurrentWork() {
+func (d *Device) updateCurrentWork(ctx context.Context) {
 	var w *work.Work
 	if d.hasWork {
 		// If we already have work, we just need to check if there's new one
@@ -107,11 +108,10 @@ func (d *Device) updateCurrentWork() {
 			return
 		}
 	} else {
-		// If we don't have work, we block until we do. We need to watch for
-		// quit events too.
+		// If we don't have work, we block until we do.
 		select {
 		case w = <-d.newWork:
-		case <-d.quit:
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -143,8 +143,8 @@ func (d *Device) updateCurrentWork() {
 	minrLog.Tracef("work data for work update: %x", d.work.Data)
 }
 
-func (d *Device) Run() {
-	err := d.runDevice()
+func (d *Device) Run(ctx context.Context) {
+	err := d.runDevice(ctx)
 	if err != nil {
 		minrLog.Errorf("Error on device: %v", err)
 	}
@@ -354,14 +354,10 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	}
 }
 
-func (d *Device) Stop() {
-	close(d.quit)
-}
-
-func (d *Device) SetWork(w *work.Work) {
+func (d *Device) SetWork(ctx context.Context, w *work.Work) {
 	select {
 	case d.newWork <- w:
-	case <-d.quit:
+	case <-ctx.Done():
 	}
 }
 

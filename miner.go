@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -23,7 +24,6 @@ type Miner struct {
 	started          uint32
 	devices          []*Device
 	workDone         chan []byte
-	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
 	pool             *stratum.Stratum
@@ -32,7 +32,6 @@ type Miner struct {
 func NewMiner() (*Miner, error) {
 	m := &Miner{
 		workDone:         make(chan []byte, 10),
-		quit:             make(chan struct{}),
 		needsWorkRefresh: make(chan struct{}),
 	}
 
@@ -59,12 +58,12 @@ func NewMiner() (*Miner, error) {
 	return m, nil
 }
 
-func (m *Miner) workSubmitThread() {
+func (m *Miner) workSubmitThread(ctx context.Context) {
 	defer m.wg.Done()
 
 	for {
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case data := <-m.workDone:
 			// Only use that is we are not using a pool.
@@ -84,7 +83,7 @@ func (m *Miner) workSubmitThread() {
 
 					select {
 					case m.needsWorkRefresh <- struct{}{}:
-					case <-m.quit:
+					case <-ctx.Done():
 					}
 				}
 			} else {
@@ -107,7 +106,7 @@ func (m *Miner) workSubmitThread() {
 
 					select {
 					case m.needsWorkRefresh <- struct{}{}:
-					case <-m.quit:
+					case <-ctx.Done():
 					}
 				}
 			}
@@ -115,7 +114,7 @@ func (m *Miner) workSubmitThread() {
 	}
 }
 
-func (m *Miner) workRefreshThread() {
+func (m *Miner) workRefreshThread(ctx context.Context) {
 	defer m.wg.Done()
 
 	t := time.NewTicker(100 * time.Millisecond)
@@ -129,7 +128,7 @@ func (m *Miner) workRefreshThread() {
 				minrLog.Errorf("Error in getwork: %v", err)
 			} else {
 				for _, d := range m.devices {
-					d.SetWork(work)
+					d.SetWork(ctx, work)
 				}
 			}
 		} else {
@@ -141,7 +140,7 @@ func (m *Miner) workRefreshThread() {
 					minrLog.Errorf("Error in getpoolwork: %v", err)
 				} else {
 					for _, d := range m.devices {
-						d.SetWork(work)
+						d.SetWork(ctx, work)
 					}
 				}
 			} else {
@@ -149,7 +148,7 @@ func (m *Miner) workRefreshThread() {
 			}
 		}
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case <-t.C:
 		case <-m.needsWorkRefresh:
@@ -157,7 +156,7 @@ func (m *Miner) workRefreshThread() {
 	}
 }
 
-func (m *Miner) printStatsThread() {
+func (m *Miner) printStatsThread(ctx context.Context) {
 	defer m.wg.Done()
 
 	t := time.NewTicker(time.Second * 5)
@@ -196,7 +195,7 @@ func (m *Miner) printStatsThread() {
 		}
 
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case <-t.C:
 		case <-m.needsWorkRefresh:
@@ -204,43 +203,36 @@ func (m *Miner) printStatsThread() {
 	}
 }
 
-func (m *Miner) Run() {
+func (m *Miner) Run(ctx context.Context) {
 	m.wg.Add(len(m.devices))
 
 	for _, d := range m.devices {
 		device := d
 		go func() {
-			device.Run()
+			device.Run(ctx)
 			device.Release()
 			m.wg.Done()
 		}()
 	}
 
 	m.wg.Add(1)
-	go m.workSubmitThread()
+	go m.workSubmitThread(ctx)
 
 	if cfg.Benchmark {
 		minrLog.Warn("Running in BENCHMARK mode! No real mining taking place!")
 		work := &work.Work{}
 		for _, d := range m.devices {
-			d.SetWork(work)
+			d.SetWork(ctx, work)
 		}
 	} else {
 		m.wg.Add(1)
-		go m.workRefreshThread()
+		go m.workRefreshThread(ctx)
 	}
 
 	m.wg.Add(1)
-	go m.printStatsThread()
+	go m.printStatsThread(ctx)
 
 	m.wg.Wait()
-}
-
-func (m *Miner) Stop() {
-	close(m.quit)
-	for _, d := range m.devices {
-		d.Stop()
-	}
 }
 
 func (m *Miner) Status() (uint64, uint64, uint64, uint64, float64) {

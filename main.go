@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"time"
@@ -86,15 +85,9 @@ func gominerMain() error {
 		go RunMonitor(m)
 	}
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		<-c
-		mainLog.Warn("Got Control+C, exiting...")
-		m.Stop()
-	}()
+	ctx := shutdownListener()
 
-	m.Run()
+	m.Run(ctx)
 
 	return nil
 }

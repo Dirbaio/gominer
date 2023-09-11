@@ -8,6 +8,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -244,8 +245,6 @@ type Device struct {
 	allDiffOneShares uint64
 	validShares      uint64
 	invalidShares    uint64
-
-	quit chan struct{}
 }
 
 // If the device order and OpenCL index are ever not the same then we can
@@ -389,7 +388,6 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 		deviceID:    deviceID,
 		deviceName:  getDeviceInfo(deviceID, cl.CL_DEVICE_NAME, "CL_DEVICE_NAME"),
 		deviceType:  getDeviceInfo(deviceID, cl.CL_DEVICE_TYPE, "CL_DEVICE_TYPE"),
-		quit:        make(chan struct{}),
 		newWork:     make(chan *work.Work, 5),
 		workDone:    workDone,
 		fanPercent:  0,
@@ -588,7 +586,7 @@ func NewDevice(index int, order int, platformID cl.CL_platform_id, deviceID cl.C
 	return d, nil
 }
 
-func (d *Device) runDevice() error {
+func (d *Device) runDevice(ctx context.Context) error {
 	minrLog.Infof("Started DEV #%d: %s", d.index, d.deviceName)
 	outputData := make([]uint32, outputBufferSize)
 
@@ -600,11 +598,12 @@ func (d *Device) runDevice() error {
 	}
 
 	var status cl.CL_int
+	ctxDoneCh := ctx.Done()
 	for {
-		d.updateCurrentWork()
+		d.updateCurrentWork(ctx)
 
 		select {
-		case <-d.quit:
+		case <-ctxDoneCh:
 			return nil
 		default:
 		}

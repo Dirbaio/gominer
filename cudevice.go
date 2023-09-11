@@ -82,8 +82,6 @@ type Device struct {
 	allDiffOneShares uint64
 	validShares      uint64
 	invalidShares    uint64
-
-	quit chan struct{}
 }
 
 func decredBlake3Hash(dimgrid, threads uint32, midstate, lastblock unsafe.Pointer, out cu.DevicePtr) {
@@ -199,7 +197,6 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 		deviceType:  DeviceTypeGPU,
 		cuda:        true,
 		kind:        DeviceKindNVML,
-		quit:        make(chan struct{}),
 		newWork:     make(chan *work.Work, 5),
 		workDone:    workDone,
 		fanPercent:  0,
@@ -294,7 +291,7 @@ func NewCuDevice(index int, order int, deviceID cu.Device,
 	return d, nil
 }
 
-func (d *Device) runDevice() error {
+func (d *Device) runDevice(ctx context.Context) error {
 	// Initialize the nonces for the device such that each device in the same
 	// system is doing different work while also helping prevent collisions
 	// across multiple processes and systems working on the same template.
@@ -350,11 +347,12 @@ func (d *Device) runDevice() error {
 	nonceResultsHSlice := *(*[]uint32)(unsafe.Pointer(&nonceResultsHSliceHeader))
 
 	// Mining loop.
+	ctxDoneCh := ctx.Done()
 	for {
-		d.updateCurrentWork()
+		d.updateCurrentWork(ctx)
 
 		select {
-		case <-d.quit:
+		case <-ctxDoneCh():
 			return nil
 		default:
 		}
