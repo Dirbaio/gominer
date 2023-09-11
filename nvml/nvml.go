@@ -109,18 +109,17 @@ func DeviceComputeMode(dh DeviceHandle) (ComputeMode, error) {
 
 //device name
 
-const STRING_BUFFER_SIZE = 100
-
 func makeStringBuffer(sz int) *C.char {
 	b := make([]byte, sz)
 	return C.CString(string(b))
 }
 
 func DeviceName(dh DeviceHandle) (string, error) {
-	var name *C.char = makeStringBuffer(STRING_BUFFER_SIZE)
+	const stringBufferSize = 100
+	var name *C.char = makeStringBuffer(stringBufferSize)
 	defer C.free(unsafe.Pointer(name))
-	r := NewResult(C.nvmlDeviceGetName(dh.handle, name, C.uint(STRING_BUFFER_SIZE)))
-	return C.GoStringN(name, STRING_BUFFER_SIZE), r
+	r := NewResult(C.nvmlDeviceGetName(dh.handle, name, C.uint(stringBufferSize)))
+	return C.GoStringN(name, stringBufferSize), r
 }
 
 type MemoryInformation struct {
