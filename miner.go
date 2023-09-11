@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -89,8 +90,8 @@ func (m *Miner) workSubmitThread(ctx context.Context) {
 			} else {
 				submitted, err := GetPoolWorkSubmit(data, m.pool)
 				if err != nil {
-					switch err {
-					case stratum.ErrStratumStaleWork:
+					switch {
+					case errors.Is(err, stratum.ErrStratumStaleWork):
 						atomic.AddUint64(&m.staleShares, 1)
 						minrLog.Debugf("Share submitted to pool was stale")
 

@@ -283,7 +283,7 @@ func (s *Stratum) Listen() {
 	for {
 		result, err := s.Reader.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				log.Error("Connection lost!  Reconnecting.")
 				err = s.Reconnect()
 				if err != nil {
