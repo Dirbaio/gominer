@@ -142,7 +142,7 @@ The following sections provide instructions for building various combinations
 of `gominer`:
 
 * [NVIDIA on Ubuntu 23.04](#nvidia-on-ubuntu-2304)
-* [Debian Bookworm](#debian-bookworm)
+* [AMD and NVIDIA on Debian Bookworm](#debian-bookworm)
 
 #### NVIDIA on Ubuntu 23.04
 
@@ -150,7 +150,7 @@ This section provides instructions for building `gominer` on a computer with an
 NVIDIA graphics card running Ubuntu 23.04.  Both OpenCL and CUDA build
 instructions are provided.
 
-##### Pre-requisites
+##### Prerequisites
 
 The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 
@@ -169,7 +169,7 @@ The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
   - `git clone https://github.com/decred/gominer`
 - Jump to the appropriate section for either
   [OpenCL](#opencl-on-ubuntu) or [CUDA](#cuda-on-ubuntu) 
-  depending on which GPU library you want to build `gominer` for.
+  depending on which GPU library you want to build `gominer` for
 
 ###### OpenCL on Ubuntu
 
@@ -196,10 +196,10 @@ The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 #### Debian Bookworm
 
 This section provides instructions for building `gominer` on a computer running
-Debian bookworm.  Both OpenCL (using either AMD or an NVIDIA graphics cards)
+Debian bookworm.  Both OpenCL (using either AMD or NVIDIA graphics cards)
 and CUDA (NVIDIA graphics cards only) build instructions are provided.
 
-##### Pre-requisites
+##### Prerequisites
 
 - Enable the non-free (closed source) repository by using your favorite editor
   to modify `/etc/apt/sources.list` and appending `contrib non-free` to the
@@ -227,7 +227,7 @@ based on the hardware available on the computer:
 - Restart the computer to ensure the driver is loaded
 - Jump to the appropriate section for either
   [OpenCL](#opencl-on-debian) or [CUDA](#cuda-on-debian) 
-  depending on which GPU library you want to build `gominer` for.
+  depending on which GPU library you want to build `gominer` for
 
 
 ###### OpenCL on Debian
@@ -262,7 +262,17 @@ computer.
 
 ### Windows
 
-#### Windows Pre-requisites
+#### Windows Preliminaries
+
+Gominer works with OpenCL (both AMD and NVIDIA) and CUDA (NVIDIA only).
+
+At the current time, most users have reported that OpenCL gives them higher
+hashrates on NVIDIA.  Additionally, building the CUDA-enabled version of
+`gominer` on Windows is a much more involved process.  For these reasons, unless
+you really want to run the CUDA version for a specific reason, it is recommended
+to use OpenCL.
+
+#### Windows Prerequisites
 
 The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 
@@ -279,10 +289,10 @@ The following steps are applicable for both OpenCL and CUDA builds of `gominer`:
 - **Close the `MSYS2 MINGW64` shell and relaunch it**
   - NOTE: This is necessary to ensure all of the new environment variables are set properly
 - Jump to the appropriate section for either
-  [OpenCL](#opencl-pre-requisites-on-windows), or [CUDA with NVIDIA](#cuda-with-nvidia) 
-  depending on which type of GPU you have
+  [OpenCL](#opencl-prerequisites-on-windows) or [CUDA](#cuda-with-nvidia)
+  depending on which GPU library you want to build `gominer` for
 
-##### OpenCL Pre-requisites on Windows
+##### OpenCL Prerequisites on Windows
 
 The following is needed when performing an OpenCL build:
 
@@ -290,18 +300,8 @@ The following is needed when performing an OpenCL build:
   the light OpenCL SDK:
   - `wget https://github.com/GPUOpen-LibrariesAndSDKs/OCL-SDK/files/1406216/lightOCLSDK.zip`
   - `unzip -d /c/appsdk lightOCLSDK.zip`
-- Jump to the appropriate section for either [OpenCL with NVIDIA](#opencl-with-nvidia),
-  or [OpenCL with AMD](#opencl-with-amd) depending on which type of GPU you have
-
-
-##### OpenCL with NVIDIA
-
-- Build gominer
-  - `cd ~/gominer`
-  - `go build -tags opencl`
-- Test `gominer` detects your GPU(s)
-  - `./gominer -l`
-- You may now [configure and run](#configuring-gominer) `gominer`
+- Jump to the appropriate section for either [OpenCL with AMD](#opencl-with-amd) or
+  [OpenCL with NVIDIA](#opencl-with-nvidia) depending on which type of GPU you have
 
 ##### OpenCL with AMD
 
@@ -311,6 +311,15 @@ The following is needed when performing an OpenCL build:
   - `cp /c/Windows/SysWOW64/atiadlxx.dll .`
   - `gendef atiadlxx.dll`
   - `dlltool --output-lib libatiadlxx.a --input-def atiadlxx.def`
+- Build gominer
+  - `cd ~/gominer`
+  - `go build -tags opencl`
+- Test `gominer` detects your GPU(s)
+  - `./gominer -l`
+- You may now [configure and run](#configuring-gominer) `gominer`
+
+##### OpenCL with NVIDIA
+
 - Build gominer
   - `cd ~/gominer`
   - `go build -tags opencl`
@@ -332,7 +341,7 @@ Toolkit version 12.2.  If the automatic builder for `gominer` does not work on
 your system, you many need to [manually setup the various
 tools](/docs/cuda-manual-windows-build.md).
 
-After fulfilling the [Windows pre-requisites](#windows-pre-requisites), follow 
+After fulfilling the [Windows prerequisites](#windows-prerequisites), follow
 the following instructions:
 
 - Download and install the appropriate NVIDIA driver
