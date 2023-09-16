@@ -19,6 +19,7 @@ package main
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/bits"
@@ -368,7 +369,7 @@ func (d *Device) runDevice(ctx context.Context) error {
 		d.updateCurrentWork(ctx)
 
 		select {
-		case <-ctxDoneCh():
+		case <-ctxDoneCh:
 			return nil
 		default:
 		}
