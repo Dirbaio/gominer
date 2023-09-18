@@ -15,7 +15,12 @@
 #define MAX_OUTPUT_RESULTS 32
 
 // Written and optimized by Dave Collins Sep 2023.
+#if __CUDACC_VER_MAJOR__ >= 10
 #define ROTR(v, n) __funnelshift_rc((v), (v), n)
+#else
+#define ROTR(v, n) ((v) >> n) | ((v) << (32 - n))
+#endif
+
 
 __global__
 void search(
