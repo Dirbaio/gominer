@@ -201,7 +201,8 @@ func checkRequirementsWindows() error {
 // checkRequirementsDefault checks the requirements for any other OS/architecture
 // combinations.
 func checkRequirementsDefault() error {
-	return nil
+	// Create the obj/ dir.
+	return os.MkdirAll("obj", 0o755)
 }
 
 // buildBlake3Windows builds the blake3.dll library with a compiled version of
