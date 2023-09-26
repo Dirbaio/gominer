@@ -316,12 +316,15 @@ func (d *Device) runDevice(ctx context.Context) error {
 		return err
 	}
 
-	// Need to have this stuff here for a device vs thread issue.
+	// Setup the device settings.
 	runtime.LockOSThread()
-
 	cu.DeviceReset()
 	cu.SetDevice(d.cuDeviceID)
 	cu.SetDeviceFlags(cu.DeviceScheduleBlockingSync)
+	defer func() {
+		runtime.UnlockOSThread()
+		cu.DeviceReset()
+	}()
 
 	// kernel is built with nvcc, not an api call so must be done
 	// at compile time.
@@ -484,6 +487,17 @@ func (d *Device) getKernelExecutionTime(gridSize, threadCount uint32) (time.Dura
 // calcWorkSizeForMilliseconds calculates the correct worksize to achieve
 // a device execution cycle of the passed duration in milliseconds.
 func (d *Device) calcGridSizeForMilliseconds(ms int, threadCount uint32) (uint32, error) {
+
+	// Setup the device settings.
+	runtime.LockOSThread()
+	cu.DeviceReset()
+	cu.SetDevice(d.cuDeviceID)
+	cu.SetDeviceFlags(cu.DeviceScheduleBlockingSync)
+	defer func() {
+		runtime.UnlockOSThread()
+		cu.DeviceReset()
+	}()
+
 	gridSize := uint32(32)
 	timeToAchieve := time.Duration(ms) * time.Millisecond
 	for {
