@@ -42,7 +42,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -205,17 +207,78 @@ func checkRequirementsDefault() error {
 	return os.MkdirAll("obj", 0o755)
 }
 
+// determineGPUArch determines the `--gpu-architecture` argument to use with
+// nvcc, based on the currently installed CUDA toolkit version.
+//
+// The GOMINER_CUDA_GPU_ARCH environment variable may be used to override
+// autodetection.
+func determineGPUArch() (string, error) {
+	if envVal := os.Getenv("GOMINER_CUDA_GPU_ARCH"); envVal != "" {
+		return envVal, nil
+	}
+
+	// defaultGPUArch is a sensible default architecture, which already
+	// includes the intrinsic used in the ROTR() macro of the CUDA kernel.
+	const defaultGPUArch = "compute_50"
+
+	// Run `nvcc --version` and base the decision on the toolkit version.
+	output, err := exec.Command("nvcc", "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("unable to run 'nvcc --version': %v", err)
+	}
+
+	re, err := regexp.Compile("(?mi:^Cuda compilation tools, release ([\\d]+)\\.([\\d]+))")
+	if err != nil {
+		return "", err
+	}
+	matches := re.FindStringSubmatch(string(output))
+	if len(matches) != 3 {
+		// nvcc --version failed to output the expected version string,
+		// so downgrade to the default arch.
+		return defaultGPUArch, nil
+	}
+
+	major, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return "", err
+	}
+	minor, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return "", err
+	}
+	if major > 11 || (major == 11 && minor >= 5) {
+		// Toolkit versions >= 11.5 have the "all" selector for
+		// --gpu-architecture, so use that as it's the broadest arch
+		// selector.
+		return "all", nil
+	}
+
+	// Otherwise, use the default.
+	return defaultGPUArch, nil
+}
+
 // buildBlake3Windows builds the blake3.dll library with a compiled version of
 // the Blake3 kernel.
 func buildBlake3Windows() error {
-	return runCmd("nvcc", "--shared", "--optimize=3", "--compiler-options=-GS-,-MD",
+	gpuArch, err := determineGPUArch()
+	if err != nil {
+		return err
+	}
+	return runCmd("nvcc", "--shared", "--optimize=3",
+		"--gpu-architecture="+gpuArch,
+		"--compiler-options=-GS-,-MD",
 		"-I.", "blake3.cu", "-o", "blake3.dll")
 }
 
 // buildBlake3Default builds the blake3.a library with a compiled version of the
 // Blake3 kernel.
 func buildBlake3Default() error {
+	gpuArch, err := determineGPUArch()
+	if err != nil {
+		return err
+	}
 	return runCmd("nvcc", "--lib", "--optimize=3",
+		"--gpu-architecture="+gpuArch,
 		"-I.", "blake3.cu", "-o", "obj/blake3.a")
 }
 
