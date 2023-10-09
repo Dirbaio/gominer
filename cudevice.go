@@ -71,13 +71,26 @@ type Device struct {
 	cuThreadCount uint32
 	cuGridSize    uint32
 
-	// extraNonce is the device extraNonce, where the first
-	// byte is the device ID (supporting up to 255 devices)
-	// while the last 3 bytes is the extraNonce value. If
-	// the extraNonce goes through all 0x??FFFFFF values,
-	// it will reset to 0x??000000.
-	extraNonce    uint32
-	currentWorkID uint32
+	// extraNonce is an additional nonce that is used to separate groups of
+	// devices into exclusive ranges to ensure multiple groups do not duplicate
+	// work.
+	//
+	// For solo mining, it is unique per device.
+	//
+	// For pool mining, it is assigned by the pool on a per-connection basis and
+	// therefore is only unique per client.  Note that this means it will be the
+	// same for all devices with pool mining.
+	extraNonce uint32
+
+	// extraNonce2 is a per device additional nonce where the first byte is the
+	// device ID (offset by a per-process random value) and the last 3 bytes are
+	// dedicated to the search space.  Note that this means up to 256 devices
+	// are supported without the possibility of duplicate work.
+	//
+	// Since the first byte is unique per device, it does not change during
+	// operation which implies this value will rollover to 0x??000000 from
+	// 0x??ffffff.
+	extraNonce2 uint32
 
 	midstate  [8]uint32
 	lastBlock [16]uint32
@@ -377,9 +390,9 @@ func (d *Device) runDevice(ctx context.Context) error {
 		default:
 		}
 
-		// Increment extraNonce.
-		util.RolloverExtraNonce(&d.extraNonce)
-		d.lastBlock[work.Nonce1Word] = d.extraNonce
+		// Increment second extra nonce while respecting the device id.
+		util.RolloverExtraNonce(&d.extraNonce2)
+		d.lastBlock[work.Nonce2Word] = d.extraNonce2
 
 		// Update the timestamp. Only solo work allows you to roll
 		// the timestamp.
@@ -409,15 +422,15 @@ func (d *Device) runDevice(ctx context.Context) error {
 		numResults := nonceResultsHSlice[0]
 		for i, result := range nonceResultsHSlice[1 : 1+numResults] {
 			minrLog.Debugf("GPU #%d: Found candidate %v nonce %08x, "+
-				"extraNonce %08x, workID %08x, timestamp %08x",
+				"extraNonce %08x, extraNonce2 %08x, timestamp %08x",
 				d.index, i, result, d.lastBlock[work.Nonce1Word],
-				d.currentWorkID, d.lastBlock[work.TimestampWord])
+				d.lastBlock[work.Nonce2Word], d.lastBlock[work.TimestampWord])
 
 			// Assess the work. If it's below target, it'll be rejected
 			// here. The mining algorithm currently sends this function any
 			// difficulty 1 shares.
 			d.foundCandidate(d.lastBlock[work.TimestampWord], result,
-				d.lastBlock[work.Nonce1Word])
+				d.lastBlock[work.Nonce1Word], d.lastBlock[work.Nonce2Word])
 		}
 
 		elapsedTime := time.Since(currentTime)

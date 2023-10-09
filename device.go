@@ -73,27 +73,31 @@ func (d *Device) initNonces() error {
 	extraNonceRandOffset := binary.LittleEndian.Uint32(buf[0:])
 	extraNonce2RandOffset := binary.LittleEndian.Uint32(buf[4:])
 
-	// Set the initial extra nonce as follows:
+	// Set the extra nonce to a random value.  This value is unique per device
+	// when solo mining.  The extra nonce is assigned by the pool instead when
+	// pool mining.
+	//
+	// When combined with the device ID in the second extra nonce below, this
+	// helps prevent collisions across multiple processes and systems working on
+	// the same template.
+	d.extraNonce = extraNonceRandOffset
+
+	// Set the initial second extra nonce as follows:
 	// - The first byte is the device ID offset by the first per-process random
 	//   device offset
 	// - The remaining 3 bytes are a per-device random extra nonce offset
 	//
-	// This, when coupled with the second per-process random device offset set
-	// elsewhere, ensures each device in the same system is doing different work
-	// (up to 65536 devices) while also helping prevent collisions across
-	// multiple processes and systems working on the same template.
-	deviceOffset := (uint32(d.index) + uint32(randDeviceOffset1)) % 255
-	d.extraNonce = deviceOffset<<24 | extraNonceRandOffset&0x00ffffff
-
-	// Set the current work ID to a random initial value.
+	// This ensures each device in the same system is doing different work (up
+	// to 256 devices).
 	//
-	// The current work ID is also treated as a secondary extra nonce and thus,
-	// when combined with the extra nonce above, the result is that the pair
-	// effectively acts as an 8-byte randomized extra nonce.
-	d.currentWorkID = extraNonce2RandOffset
+	// This implies that the total search space is 7 bytes when combining the 3
+	// bytes provided by this value along with the normal 4-byte nonce.  In
+	// other words, it supports devices up to ~72 Ph/s.
+	deviceOffset := (uint32(d.index) + uint32(randDeviceOffset1)) % 256
+	d.extraNonce2 = deviceOffset<<24 | extraNonce2RandOffset&0x00ffffff
 
-	minrLog.Debugf("DEV #%d: initial extraNonce %x, initial workID: %x",
-		d.index, d.extraNonce, d.currentWorkID)
+	minrLog.Debugf("DEV #%d: initial extraNonce %x, initial extraNonce2: %x",
+		d.index, d.extraNonce, d.extraNonce2)
 	return nil
 }
 
@@ -121,15 +125,30 @@ func (d *Device) updateCurrentWork(ctx context.Context) {
 	d.work = *w
 	minrLog.Tracef("pre-nonce: %x", d.work.Data[:])
 
-	// Bump and set the work ID.
-	d.currentWorkID++
+	// Ensure the work data is updated with the extra nonce associated with the
+	// device for solo mining.
+	//
+	// The extra nonce is provided by the pool when pool mining, so there is no
+	// need to update it in that case.
+	const en1Offset = 128 + 4*work.Nonce1Word
+	if d.work.IsGetWork {
+		binary.LittleEndian.PutUint32(d.work.Data[en1Offset:], d.extraNonce)
+	}
+
+	// Ensure the work data is updated with the second extra nonce associated
+	// with the device.
 	binary.LittleEndian.PutUint32(d.work.Data[128+4*work.Nonce2Word:],
-		d.currentWorkID)
+		d.extraNonce2)
 
 	// Set additional byte with the device id offset by a second per-process
-	// random device offset to support up to 65536 devices.
-	deviceID := uint8((uint32(d.index) + uint32(randDeviceOffset2)) % 255)
-	d.work.Data[128+4*work.Nonce3Word] = deviceID
+	// random device offset to support up to 65536 devices with getwork (solo)
+	// mining.  Pool mining does not support the additional byte, so it is not
+	// needed in that case.  Note that this also means pool mining only supports
+	// 256 devices per client (aka process instance).
+	if d.work.IsGetWork {
+		deviceID := uint8((uint32(d.index) + uint32(randDeviceOffset2)) % 256)
+		d.work.Data[128+4*work.Nonce3Word] = deviceID
+	}
 
 	// Hash the two first blocks.
 	d.midstate = blake3.Block(blake3.IV, d.work.Data[0:64], blake3.FlagChunkStart)
@@ -316,7 +335,7 @@ func (d *Device) fanControlSupported(kind string) bool {
 	return false
 }
 
-func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
+func (d *Device) foundCandidate(ts, nonce0, nonce1, nonce2 uint32) {
 	d.Lock()
 	defer d.Unlock()
 	// Construct the final block header.
@@ -326,6 +345,7 @@ func (d *Device) foundCandidate(ts, nonce0, nonce1 uint32) {
 	binary.LittleEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
 	binary.LittleEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
 	binary.LittleEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce2Word:], nonce2)
 	hash := chainhash.Hash(blake3.FinalBlock(d.midstate, data[128:180]))
 
 	// Hashes that reach this logic and fail the minimal proof of
