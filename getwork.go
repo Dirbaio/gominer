@@ -15,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/decred/go-socks/socks"
@@ -165,14 +164,17 @@ func GetWork() (*work.Work, error) {
 			len(target))
 	}
 
-	bigTarget := new(big.Int)
-	bigTarget.SetBytes(util.Reverse(target))
+	// The bigTarget difficulty is provided in little endian, but big integers
+	// expect big endian, so reverse it accordingly.
+	bigTarget := new(big.Int).SetBytes(util.Reverse(target))
 
 	var workData [192]byte
 	copy(workData[:], data)
-	givenTs := binary.LittleEndian.Uint32(
-		workData[128+4*work.TimestampWord : 132+4*work.TimestampWord])
-	w := work.NewWork(workData, bigTarget, givenTs, uint32(time.Now().Unix()), true)
+
+	const isGetWork = true
+	timestamp := binary.LittleEndian.Uint32(workData[128+4*work.TimestampWord:])
+	w := work.NewWork(workData, bigTarget, timestamp, uint32(time.Now().Unix()),
+		isGetWork)
 
 	w.Target = bigTarget
 
@@ -196,8 +198,8 @@ func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
 			return nil, err
 		}
 
-		intJob, _ := strconv.ParseInt(pool.PoolWork.JobID, 16, 0)
-		poolLog.Debugf("new job %v height %v", intJob, pool.PoolWork.Height)
+		poolLog.Debugf("new job %q height %v", pool.PoolWork.JobID,
+			pool.PoolWork.Height)
 
 		return pool.PoolWork.Work, nil
 	}

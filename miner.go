@@ -38,7 +38,8 @@ func NewMiner() (*Miner, error) {
 
 	// If needed, start pool code.
 	if cfg.Pool != "" && !cfg.Benchmark {
-		s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword, cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version())
+		s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword,
+			cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version(), chainParams)
 		if err != nil {
 			return nil, err
 		}

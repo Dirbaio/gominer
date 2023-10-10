@@ -497,13 +497,9 @@ func (d *Device) runDevice() error {
 		util.RolloverExtraNonce(&d.extraNonce2)
 		d.lastBlock[work.Nonce2Word] = d.extraNonce2
 
-		// Update the timestamp. Only solo work allows you to roll
-		// the timestamp.
-		ts := d.work.JobTime
-		if d.work.IsGetWork {
-			diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
-			ts = d.work.JobTime + diffSeconds
-		}
+		// Update the timestamp.
+		diffSeconds := uint32(time.Now().Unix()) - d.work.TimeReceived
+		ts += d.work.JobTime + diffSeconds
 		d.lastBlock[work.TimestampWord] = ts
 
 		// arg 0: pointer to the buffer

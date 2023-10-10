@@ -5,7 +5,6 @@ package stratum
 import (
 	"bufio"
 	"bytes"
-	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -25,13 +24,12 @@ import (
 
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/dcrd/crypto/blake256"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/go-socks/socks"
 	"github.com/decred/gominer/util"
 	"github.com/decred/gominer/work"
 )
-
-var chainParams = chaincfg.MainNetParams()
 
 // ErrStratumStaleWork indicates that the work to send to the pool was stale.
 var ErrStratumStaleWork = errors.New("stale work, throwing away")
@@ -42,7 +40,6 @@ type Stratum struct {
 	// The following variables must only be used atomically.
 	ValidShares   uint64
 	InvalidShares uint64
-	latestJobTime uint32
 
 	sync.Mutex
 	cfg       Config
@@ -61,6 +58,7 @@ type Stratum struct {
 
 // Config holdes the config options that may be used by a stratum pool.
 type Config struct {
+	Params    *chaincfg.Params
 	Pool      string
 	User      string
 	Pass      string
@@ -79,7 +77,6 @@ type NotifyWork struct {
 	ExtraNonce2Length float64
 	Nonce2            uint32
 	CB1               string
-	CB2               string
 	Height            int64
 	NtimeDelta        int64
 	JobID             string
@@ -174,8 +171,11 @@ func sliceRemove(s []uint64, e uint64) []uint64 {
 
 // StratumConn starts the initial connection to a stratum pool and sets defaults
 // in the pool object.
-func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string) (*Stratum, error) {
+func StratumConn(pool, user, pass, proxy, proxyUser, proxyPass, version string,
+	chainParams *chaincfg.Params) (*Stratum, error) {
+
 	var stratum Stratum
+	stratum.cfg.Params = chainParams
 	stratum.cfg.User = user
 	stratum.cfg.Pass = pass
 	stratum.cfg.Proxy = proxy
@@ -411,7 +411,6 @@ func (s *Stratum) handleNotifyRes(resp interface{}) {
 	}
 
 	s.PoolWork.Height = height
-	s.PoolWork.CB2 = nResp.GenTX2
 	s.PoolWork.Hash = nResp.Hash
 	s.PoolWork.Nbits = nResp.Nbits
 	s.PoolWork.Version = nResp.BlockVersion
@@ -699,13 +698,8 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 			return nil, errJsonType
 		}
 		nres.GenTX1 = genTX1
-		genTX2, ok := resi[3].(string)
-		if !ok {
-			return nil, errJsonType
-		}
-		nres.GenTX2 = genTX2
-		//ccminer code also confirms this
-		//nres.MerkleBranches = resi[4].([]string)
+		// Ignore the GenTX2 (param 3) and Merkle Branches (param 4) fields
+		// since they do not apply to Decred.
 		blockVersion, ok := resi[5].(string)
 		if !ok {
 			return nil, errJsonType
@@ -740,7 +734,7 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 		if !ok {
 			return nil, errJsonType
 		}
-		s.Target, err = util.DiffToTarget(difficulty, chainParams.PowLimit)
+		s.Target, err = util.DiffToTarget(difficulty, s.cfg.Params.PowLimit)
 		if err != nil {
 			return nil, err
 		}
@@ -833,108 +827,101 @@ func (s *Stratum) Unmarshal(blob []byte) (interface{}, error) {
 
 // PrepWork converts the stratum notify to getwork style data for mining.
 func (s *Stratum) PrepWork() error {
-	// Build final extranonce, which is basically the pool user and worker
-	// ID.
+	// Decode the previous block hash.  Stratum should provide the hash in
+	// internal byte order (meaning the exact order produced by the hash
+	// function).
+	//
+	// Note that this is reversed from how it typically appears when presented
+	// to humans in places such as block explorers which treat them as little
+	// endian uint256s.
+	prevHashBytes, err := hex.DecodeString(s.PoolWork.Hash)
+	if err != nil {
+		return fmt.Errorf("error decoding previous block hash: %w", err)
+	}
+
+	// Decode extranonce1 which is basically the pool user and worker ID.
+	const maxExtraNonce1Len = 4
 	en1, err := hex.DecodeString(s.PoolWork.ExtraNonce1)
 	if err != nil {
-		log.Error("Error decoding ExtraNonce1.")
-		return err
+		return fmt.Errorf("error decoding ExtraNonce1 field: %w", err)
+	}
+	if len(en1) > maxExtraNonce1Len {
+		return fmt.Errorf("extraNonce1 length must be a max of %d bytes",
+			maxExtraNonce1Len)
 	}
 
-	// Work out padding.
-	tmp := []string{"%0", strconv.Itoa(int(s.PoolWork.ExtraNonce2Length) * 2), "x"}
-	fmtString := strings.Join(tmp, "")
-	en2, err := hex.DecodeString(fmt.Sprintf(fmtString, s.PoolWork.ExtraNonce2))
+	// Require a minimum of 4 bytes and a maximum of 12 bytes for the length of
+	// extraNonce2.
+	const requiredExtraNonce2Len = 4
+	const maxExtraNonce2Len = 12
+	if s.PoolWork.ExtraNonce2Length < requiredExtraNonce2Len {
+		return fmt.Errorf("extraNonce2 length must be at least %d bytes",
+			requiredExtraNonce2Len)
+	}
+	if s.PoolWork.ExtraNonce2Length > maxExtraNonce2Len {
+		return fmt.Errorf("extraNonce2 length must be a max of %d bytes",
+			maxExtraNonce2Len)
+	}
+
+	// The stratum "protocol" (which is not actually very well defined) does not
+	// individually provide all of the information the Decred header needs nor
+	// does it provide an official way to extend it.
+	//
+	// Further, the Decred header explicitly provides additional space which
+	// removes the need to create a new coinbase and update the merkle root.
+	//
+	// In order to address these things, the field that was intended to serve
+	// for the coinbase (generate transaction) is instead repurposed to contain
+	// the serialized partial header for everything after the previous block
+	// hash in the format it is to be hashed.
+	partialHeader, err := hex.DecodeString(s.PoolWork.CB1)
 	if err != nil {
-		log.Error("Error decoding ExtraNonce2.")
-		return err
+		return fmt.Errorf("error decoding cb1 field (partial header): %w", err)
 	}
-	extraNonce := append(en1[:], en2[:]...)
 
-	// Put coinbase transaction together.
-	cb1, err := hex.DecodeString(s.PoolWork.CB1)
+	// Decode block version.
+	//
+	// The block version must be in little endian in the serialized header and
+	// stratum should provide all fields in little endian.  Thus, no conversion
+	// is needed.
+	blockVerBytes, err := hex.DecodeString(s.PoolWork.Version)
 	if err != nil {
-		log.Error("Error decoding Coinbase pt 1.")
-		return err
+		return fmt.Errorf("error decoding version field: %w", err)
 	}
-	cb2, err := hex.DecodeString(s.PoolWork.CB2)
+
+	// Decode timestamp.
+	//
+	// Stratum should provide all fields in little endian.
+	timestampBytes, err := hex.DecodeString(s.PoolWork.Ntime)
 	if err != nil {
-		log.Errorf("Error decoding Coinbase pt 2.")
-		return err
+		return fmt.Errorf("error decoding timestamp field: %w", err)
 	}
+	timestamp := binary.LittleEndian.Uint32(timestampBytes)
 
-	// Generate current ntime.
-	ntime := time.Now().Unix() + s.PoolWork.NtimeDelta
-
-	log.Tracef("ntime: %x", ntime)
-
-	// Serialize header.
-	bh := wire.BlockHeader{}
-	v, err := hex.DecodeString(s.PoolWork.Version)
-	if err != nil {
-		return err
-	}
-	bh.Version = int32(binary.LittleEndian.Uint32(v))
-
-	nbits, err := hex.DecodeString(s.PoolWork.Nbits)
-	if err != nil {
-		log.Error("Error decoding nbits")
-		return err
-	}
-
-	b, _ := binary.Uvarint(nbits)
-	bh.Bits = uint32(b)
-	t := time.Now().Unix() + s.PoolWork.NtimeDelta
-	bh.Timestamp = time.Unix(t, 0)
-	bh.Nonce = 0
-
-	// Serialized version.
-	blockHeader, err := bh.Bytes()
-	if err != nil {
-		return err
-	}
-
-	data := blockHeader
-	copy(data[31:139], cb1[0:108])
-
-	var workdata [180]byte
-	workPosition := 0
-
-	version := new(bytes.Buffer)
-	err = binary.Write(version, binary.LittleEndian, v)
-	if err != nil {
-		return err
-	}
-	copy(workdata[workPosition:], version.Bytes())
-
-	prevHash := util.RevHash(s.PoolWork.Hash)
-	p, err := hex.DecodeString(prevHash)
-	if err != nil {
-		log.Error("Error encoding previous hash.")
-		return err
-	}
-
-	workPosition += 4
-	copy(workdata[workPosition:], p)
-	workPosition += 32
-	copy(workdata[workPosition:], cb1[0:108])
-	workPosition += 108
-	copy(workdata[workPosition:], extraNonce)
-	workPosition = 176
-	copy(workdata[workPosition:], cb2)
-
-	var randomBytes = make([]byte, 4)
-	_, err = rand.Read(randomBytes)
-	if err != nil {
-		log.Errorf("Unable to generate random bytes")
-		return err
-	}
-
+	// Assemble work with provided details.
+	//
+	// The getwork data format consists of the serialized block header followed
+	// by the additional blake3 padding needed to bring the data length to a
+	// multiple of the blake3 block size.  Since the blake3 block size is 64
+	// bytes and the header is 180 bytes, the next multiple is 192 bytes.
+	//
+	// See the comment on the partial header above for the rationale here.
+	//
+	// Note that the timestamp is not set in the work data here because it is
+	// passed along to the mining process separately where it is updated and set
+	// accordingly as work is performed.  It is also worth noting that the pool
+	// providing the work should typically have already set the provided
+	// timestamp in the provided partial header too, but this implementation
+	// does not rely on that assumption.
 	var workData [192]byte
-	copy(workData[:], workdata[:])
-	givenTs := binary.LittleEndian.Uint32(
-		workData[128+4*work.TimestampWord : 132+4*work.TimestampWord])
-	atomic.StoreUint32(&s.latestJobTime, givenTs)
+	offset := 0
+	offset += copy(workData[offset:], blockVerBytes)
+	offset += copy(workData[offset:], prevHashBytes)
+	copy(workData[offset:], partialHeader)
+
+	// Set the provided extra nonce at the expected offset.  The protocol
+	// expects it to be in the serialized header just after the 4-byte nonce.
+	copy(workData[144:], en1)
 
 	if s.Target == nil {
 		log.Errorf("No target set!  Reconnecting to pool.")
@@ -949,67 +936,47 @@ func (s *Stratum) PrepWork() error {
 		return nil
 	}
 
-	w := work.NewWork(workData, s.Target, givenTs, uint32(time.Now().Unix()), false)
-
-	log.Tracef("Stratum prepated work data %x, target %032x", w.Data[:],
-		w.Target.Bytes())
+	const isGetWork = false
+	receivedTime := uint32(time.Now().Unix())
+	w := work.NewWork(workData, s.Target, timestamp, receivedTime, isGetWork)
 	s.PoolWork.Work = w
+	log.Tracef("Stratum prepared work data %x, target %064x", w.Data[:],
+		w.Target)
 
 	return nil
 }
 
 // PrepSubmit formats a mining.sumbit message from the solved work.
 func (s *Stratum) PrepSubmit(data []byte) (Submit, error) {
-	log.Debugf("Stratum got valid work to submit %x", data)
-	log.Debugf("Stratum got valid work hash %v",
-		chainhash.HashH(data[0:180]))
-	data2 := make([]byte, 180)
-	copy(data2, data[0:180])
+	headerBytes := data[0:wire.MaxBlockHeaderPayload]
+	log.Debugf("Stratum got valid work to submit %x (block hash %v)", data,
+		chainhash.Hash(blake256.Sum256(headerBytes)))
 
 	sub := Submit{}
 	sub.Method = "mining.submit"
 
-	// Format data to send off.
-	hexData := hex.EncodeToString(data)
-	decodedData, err := hex.DecodeString(hexData)
-	if err != nil {
-		log.Error("Error decoding data")
-		return sub, err
-	}
-
 	var submittedHeader wire.BlockHeader
-	bhBuf := bytes.NewReader(decodedData[0:wire.MaxBlockHeaderPayload])
-	err = submittedHeader.Deserialize(bhBuf)
+	err := submittedHeader.Deserialize(bytes.NewReader(headerBytes))
 	if err != nil {
 		log.Error("Error generating header")
 		return sub, err
-	}
-
-	latestWorkTs := atomic.LoadUint32(&s.latestJobTime)
-	if uint32(submittedHeader.Timestamp.Unix()) != latestWorkTs {
-		return sub, ErrStratumStaleWork
 	}
 
 	s.ID++
 	sub.ID = s.ID
 	s.submitIDs = append(s.submitIDs, s.ID)
 
-	// The timestamp string should be:
-	//
-	//   timestampStr := fmt.Sprintf("%08x",
-	//     uint32(submittedHeader.Timestamp.Unix()))
-	//
-	// but the "stratum" protocol appears to only use this value
-	// to check if the miner is in sync with the latest announcement
-	// of work from the pool. If this value is anything other than
-	// the timestamp of the latest pool work timestamp, work gets
-	// rejected from the current implementation.
-	timestampStr := fmt.Sprintf("%08x", latestWorkTs)
-	nonceStr := fmt.Sprintf("%08x", submittedHeader.Nonce)
-	xnonceStr := hex.EncodeToString(data[144:156])
-
-	sub.Params = []string{s.cfg.User, s.PoolWork.JobID, xnonceStr, timestampStr,
-		nonceStr}
+	// The fields in the serialized header must be in little endian and stratum
+	// fields for numeric values should be in little endian.  Thus, no
+	// endianness conversion is needed.
+	uint32LEHex := func(startOffset int) string {
+		return hex.EncodeToString(data[startOffset : startOffset+4])
+	}
+	timestampHex := uint32LEHex(128 + 4*work.TimestampWord)
+	nonceHex := uint32LEHex(128 + 4*work.Nonce0Word)
+	extraNonce2Hex := uint32LEHex(128 + 4*work.Nonce2Word)
+	sub.Params = []string{s.cfg.User, s.PoolWork.JobID, extraNonce2Hex,
+		timestampHex, nonceHex}
 
 	return sub, nil
 }
