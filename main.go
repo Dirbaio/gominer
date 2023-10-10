@@ -28,8 +28,8 @@ func gominerMain() error {
 	}()
 
 	// Show version at startup.
-	mainLog.Infof("Version %s %s (Go version %s)",
-		version(), gpuLib(), runtime.Version())
+	mainLog.Infof("Version %s %s (Go version %s %s/%s)", Version, gpuLib(),
+		runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	// Enable http profiling server if requested.
 	if cfg.Profile != "" {

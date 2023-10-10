@@ -39,7 +39,8 @@ type Miner struct {
 }
 
 func newStratum(devices []*Device) (*Miner, error) {
-	s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword, cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, version(), chainParams)
+	s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword,
+		cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, Version, chainParams)
 	if err != nil {
 		return nil, err
 	}

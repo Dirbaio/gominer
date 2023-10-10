@@ -318,7 +318,8 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	if preCfg.ShowVersion {
-		fmt.Printf("%s %s version %s (Go version %s)\n", appName, gpuLib(), version(), runtime.Version())
+		fmt.Printf("%s %s version %s (Go version %s %s/%s)\n", appName, gpuLib(),
+			Version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		os.Exit(0)
 	}
 
