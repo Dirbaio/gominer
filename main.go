@@ -75,18 +75,15 @@ func gominerMain() error {
 		}()
 	}
 
-	m, err := NewMiner()
+	ctx := shutdownListener()
+	m, err := NewMiner(ctx)
 	if err != nil {
 		mainLog.Criticalf("Error initializing miner: %v", err)
 		return err
 	}
-
 	if len(cfg.APIListeners) != 0 {
 		go RunMonitor(m)
 	}
-
-	ctx := shutdownListener()
-
 	m.Run(ctx)
 
 	return nil
