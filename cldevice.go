@@ -710,20 +710,21 @@ func (d *Device) runDevice(ctx context.Context) error {
 	}
 }
 
-func newMinerDevs(m *Miner) (*Miner, int, error) {
+func newMinerDevs(workDone chan []byte) ([]*Device, error) {
 	deviceListIndex := 0
 	deviceListEnabledCount := 0
 
 	platformIDs, err := getCLPlatforms()
 	if err != nil {
-		return nil, 0, fmt.Errorf("could not get CL platforms: %w", err)
+		return nil, fmt.Errorf("could not get CL platforms: %w", err)
 	}
 
+	var devices []*Device
 	for p := range platformIDs {
 		platformID := platformIDs[p]
 		CLdeviceIDs, err := getCLDevices(platformID)
 		if err != nil {
-			return nil, 0, fmt.Errorf("could not get CL devices for platform: %w", err)
+			return nil, fmt.Errorf("could not get CL devices for platform: %w", err)
 		}
 
 		for _, CLdeviceID := range CLdeviceIDs {
@@ -740,17 +741,17 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 				miningAllowed = true
 			}
 			if miningAllowed {
-				newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, m.workDone)
-				deviceListEnabledCount++
-				m.devices = append(m.devices, newDevice)
+				newDevice, err := NewDevice(deviceListIndex, deviceListEnabledCount, platformID, CLdeviceID, workDone)
 				if err != nil {
-					return nil, 0, err
+					return nil, err
 				}
+				devices = append(devices, newDevice)
+				deviceListEnabledCount++
 			}
 			deviceListIndex++
 		}
 	}
-	return m, deviceListEnabledCount, nil
+	return devices, nil
 }
 
 func getDeviceInfo(id cl.CL_device_id,

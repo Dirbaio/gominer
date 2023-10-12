@@ -546,18 +546,19 @@ func (d *Device) calcGridSizeForMilliseconds(ms int, threadCount uint32) (uint32
 
 	return gridSize, nil
 }
-func newMinerDevs(m *Miner) (*Miner, int, error) {
+func newMinerDevs(workDone chan []byte) ([]*Device, error) {
 	deviceListIndex := 0
 	deviceListEnabledCount := 0
 
 	CUdeviceIDs, err := getInfo()
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 
 	// XXX Can probably combine these bits with the opencl ones once
 	// I decide what to do about the types.
 
+	var devices []*Device
 	for _, CUDeviceID := range CUdeviceIDs {
 		miningAllowed := false
 
@@ -573,17 +574,17 @@ func newMinerDevs(m *Miner) (*Miner, int, error) {
 		}
 
 		if miningAllowed {
-			newDevice, err := NewCuDevice(deviceListIndex, deviceListEnabledCount, CUDeviceID, m.workDone)
-			deviceListEnabledCount++
-			m.devices = append(m.devices, newDevice)
+			newDevice, err := NewCuDevice(deviceListIndex, deviceListEnabledCount, CUDeviceID, workDone)
 			if err != nil {
-				return nil, 0, err
+				return nil, err
 			}
+			devices = append(devices, newDevice)
+			deviceListEnabledCount++
 		}
 		deviceListIndex++
 	}
 
-	return m, deviceListEnabledCount, nil
+	return devices, nil
 }
 
 func (d *Device) Release() {

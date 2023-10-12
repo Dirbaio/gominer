@@ -46,15 +46,16 @@ func NewMiner() (*Miner, error) {
 		m.pool = s
 	}
 
-	m, deviceListEnabledCount, err := newMinerDevs(m)
+	devices, err := newMinerDevs(m.workDone)
 	if err != nil {
 		return nil, err
 	}
 
-	if deviceListEnabledCount == 0 {
+	if len(devices) == 0 {
 		return nil, fmt.Errorf("no devices started")
 	}
 
+	m.devices = devices
 	m.started = uint32(time.Now().Unix())
 
 	return m, nil
