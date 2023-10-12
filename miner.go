@@ -51,6 +51,30 @@ func newStratum(devices []*Device) (*Miner, error) {
 	return m, nil
 }
 
+// onSoloWork prepares the provided getwork-based work data, which might have
+// either come from getwork directly or from asynchronous work notifications,
+// and updates all of the provided devices with that prepared work.
+func onSoloWork(ctx context.Context, data, target []byte, reason string, devices []*Device) {
+	minrLog.Debugf("Work received: (data: %x, target: %x, reason: %s)", data,
+		target, reason)
+
+	// The bigTarget difficulty is provided in little endian, but big integers
+	// expect big endian, so reverse it accordingly.
+	bigTarget := new(big.Int).SetBytes(util.Reverse(target))
+
+	var workData [192]byte
+	copy(workData[:], data)
+
+	const isGetWork = true
+	timestamp := binary.LittleEndian.Uint32(workData[128+4*work.TimestampWord:])
+	w := work.NewWork(workData, bigTarget, timestamp, uint32(time.Now().Unix()),
+		isGetWork)
+
+	for _, d := range devices {
+		d.SetWork(ctx, w)
+	}
+}
+
 func newSoloMiner(ctx context.Context, devices []*Device) (*Miner, error) {
 	var rpc *rpcclient.Client
 	ntfnHandlers := rpcclient.NotificationHandlers{
@@ -61,24 +85,7 @@ func newSoloMiner(ctx context.Context, devices []*Device) (*Miner, error) {
 			minrLog.Infof("Block disconnected: %x", blockHeader)
 		},
 		OnWork: func(data, target []byte, reason string) {
-			minrLog.Infof("Work received: %x %x %s", data, target, reason)
-
-			// The bigTarget difficulty is provided in little endian, but big integers
-			// expect big endian, so reverse it accordingly.
-			bigTarget := new(big.Int).SetBytes(util.Reverse(target))
-
-			var workData [192]byte
-			copy(workData[:], data)
-
-			const isGetWork = true
-			timestamp := binary.LittleEndian.Uint32(workData[128+4*work.TimestampWord:])
-			w := work.NewWork(workData, bigTarget, timestamp, uint32(time.Now().Unix()),
-				isGetWork)
-
-			// Solo
-			for _, d := range devices {
-				d.SetWork(ctx, w)
-			}
+			onSoloWork(ctx, data, target, reason, devices)
 		},
 	}
 	// Connect to local dcrd RPC server using websockets.
@@ -143,6 +150,28 @@ func NewMiner(ctx context.Context) (*Miner, error) {
 
 	m.workDone = workDone
 	m.started = uint32(time.Now().Unix())
+
+	// Perform an initial call to getwork when solo mining so work is available
+	// immediately.
+	if cfg.Pool == "" {
+		workResult, err := m.rpc.GetWork(ctx)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to retrieve initial work: %w", err)
+		}
+
+		data, err := hex.DecodeString(workResult.Data)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to decode work data: %w", err)
+		}
+		target, err := hex.DecodeString(workResult.Target)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to decode work target: %w", err)
+		}
+		onSoloWork(ctx, data, target, "initialwork", devices)
+	}
 
 	return m, nil
 }
