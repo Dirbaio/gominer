@@ -3,7 +3,8 @@
 gominer is an application for performing Proof-of-Work (PoW) mining on the
 Decred network after the activation of
 [DCP0011](https://github.com/decred/dcps/blob/master/dcp-0011/dcp-0011.mediawiki)
-using BLAKE3.  It supports solo mining using OpenCL and CUDA devices.
+using BLAKE3.  It supports solo and stratum/pool mining using OpenCL and CUDA
+devices.
 
 [User Reported Hashrates](#user-reported-hashrates)
 
@@ -50,7 +51,7 @@ aforementioned `dcrd.conf` file and restarting `dcrd`.
 your setup.
 
 ```
-./gominer -B
+gominer -B
 ```
 
 ### Solo Mining on Mainnet
@@ -60,7 +61,35 @@ credentials as well as `dcrd` with a `miningaddr`.  Once the credentials and
 mining address have been configured, simply run gominer to begin mining.
 
 ```
-./gominer
+gominer
+```
+
+### Stratum/pool Mining on Mainnet
+
+#### Mining with a Pool Based on Dcrpool
+
+The username for pools running [dcrpool](https://github.com/decred/dcrpool) is
+the payment address for receiving rewards and a unique name identifying the
+client formatted as `address.name`.
+
+Run the following command replacing the `pooldomain:port` with the appropriate
+domain name and port of the desired pool to connect to and the `address.name`
+as previously described:
+
+```
+gominer --pool stratum+tcp://pooldomain:port --pooluser address.name
+```
+
+#### General Pool Mining
+
+There is no other known pool software aside from
+[dcrpool](https://github.com/decred/dcrpool), that supports the latest Decred
+consensus rules at the current time.  However, as long as the pool software
+supports the stratum protocol with the same semantics implemented by `dcrpool`,
+the following command should serve as a starting point:
+
+```
+gominer --pool stratum+tcp://pooldomain:port --pooluser username --poolpass password
 ```
 
 ## Status API
