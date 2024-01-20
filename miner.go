@@ -128,6 +128,10 @@ func newSoloMiner(ctx context.Context, devices []*Device) (*Miner, error) {
 	return m, nil
 }
 
+func newBenchmarkMiner(devices []*Device) *Miner {
+	return &Miner{devices: devices}
+}
+
 func NewMiner(ctx context.Context) (*Miner, error) {
 	workDone := make(chan []byte, 10)
 
@@ -140,9 +144,12 @@ func NewMiner(ctx context.Context) (*Miner, error) {
 	}
 
 	var m *Miner
-	if cfg.Pool == "" {
+	switch {
+	case cfg.Benchmark:
+		m = newBenchmarkMiner(devices)
+	case cfg.Pool == "":
 		m, err = newSoloMiner(ctx, devices)
-	} else {
+	default:
 		m, err = newStratum(devices)
 	}
 	if err != nil {
@@ -151,6 +158,12 @@ func NewMiner(ctx context.Context) (*Miner, error) {
 
 	m.workDone = workDone
 	m.started = uint32(time.Now().Unix())
+
+	// Return early on benchmark mode to avoid requiring a dcrd instance to
+	// be running.
+	if cfg.Benchmark {
+		return m, nil
+	}
 
 	// Perform an initial call to getwork when solo mining so work is available
 	// immediately.
