@@ -1,19 +1,7 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
-
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-#define CL_USE_DEPRECATED_OPENCL_2_0_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
+#include "cl.h"
 */
 import "C"
 
@@ -24,9 +12,8 @@ func CLCreateSampler(context CL_context,
 	errcode_ret *CL_int) CL_sampler {
 
 	var c_errcode_ret C.cl_int
-	var c_sampler C.cl_sampler
 
-	c_sampler = C.clCreateSampler(context.cl_context,
+	c_sampler := C.clCreateSampler(context.cl_context,
 		C.cl_bool(normalized_coords),
 		C.cl_addressing_mode(addressing_mode),
 		C.cl_filter_mode(filter_mode),

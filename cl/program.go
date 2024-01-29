@@ -1,34 +1,26 @@
-
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
+// this needs to come out
 #include <string.h>
 #include <stdlib.h>
 
-extern void go_prg_notify(cl_program program, void *user_data);
-static void CL_CALLBACK c_prg_build_notify(cl_program program, void *user_data) {
+extern void	go_prg_notify(cl_program program, void *user_data);
+
+static void CL_CALLBACK
+c_prg_build_notify(cl_program program, void *user_data)
+{
 	go_prg_notify(program, user_data);
 }
 
-static cl_int CLBuildProgram(cl_program program,
-							cl_uint num_devices,
-							const cl_device_id *devices,
-							const char *options,
-							void *user_data){
-
-    return clBuildProgram(program, num_devices, devices, options, c_prg_build_notify, user_data);
+static cl_int
+CLBuildProgram(cl_program program, cl_uint num_devices,
+    const cl_device_id *devices, const char *options, void *user_data)
+{
+	return clBuildProgram(program, num_devices, devices, options,
+	    c_prg_build_notify, user_data);
 }
 */
 import "C"
@@ -191,7 +183,7 @@ func CLBuildProgram(program CL_program,
 
 	c_devices = make([]C.cl_device_id, len(devices))
 	for i := 0; i < len(devices); i++ {
-		c_devices[i] = C.cl_device_id(devices[i].cl_device_id)
+		c_devices[i] = devices[i].cl_device_id
 	}
 	if options != nil {
 		c_options = C.CString(string(options))

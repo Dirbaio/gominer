@@ -1,19 +1,7 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
-
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-#define CL_USE_DEPRECATED_OPENCL_2_0_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
+#include "cl.h"
 */
 import "C"
 
@@ -21,10 +9,10 @@ func CLCreateCommandQueue(context CL_context,
 	device CL_device_id,
 	properties CL_command_queue_properties,
 	errcode_ret *CL_int) CL_command_queue {
-	var c_errcode_ret C.cl_int
-	var c_command_queue C.cl_command_queue
 
-	c_command_queue = C.clCreateCommandQueue(context.cl_context,
+	var c_errcode_ret C.cl_int
+
+	c_command_queue := C.clCreateCommandQueue(context.cl_context,
 		device.cl_device_id,
 		C.cl_command_queue_properties(properties),
 		&c_errcode_ret)

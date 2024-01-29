@@ -4,7 +4,9 @@
 *.so
 
 # Folders
+.vscode/
 _obj
+obj/
 _test
 
 # Architecture specific extensions/prefixes
@@ -16,6 +18,9 @@ _test
 _cgo_defun.c
 _cgo_gotypes.go
 _cgo_export.*
+*.dll
+*.exp
+*.lib
 
 _testmain.go
 
@@ -24,3 +29,10 @@ _testmain.go
 *.prof
 clean.sh
 kernel/
+nvidia/
+
+*~
+gominer
+
+vendor/
+

@@ -1,186 +1,108 @@
+// Copyright (c) 2016-2023 The Decred developers.
+
 package main
 
 import (
+	"context"
+	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
-	"os"
-	"unsafe"
+	"io"
+	"sync/atomic"
+	"time"
 
-	"github.com/Dirbaio/gominer/blake256"
-	"github.com/Dirbaio/gominer/cl"
+	"github.com/decred/dcrd/blockchain/standalone/v2"
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/chaincfg/v3"
+	"github.com/decred/gominer/blake3"
+	"github.com/decred/gominer/util"
+	"github.com/decred/gominer/work"
 )
 
+var chainParams = chaincfg.MainNetParams()
+var deviceLibraryInitialized = false // nolint:unused
+
+// randDeviceOffset1 and randDeviceOffset2 are random offsets to use for all
+// devices so each process ends up with a random starting point for all devices.
+var randDeviceOffset1, randDeviceOffset2 uint8
+
+func init() {
+	var buf [2]byte
+	if _, err := io.ReadFull(rand.Reader, buf[:]); err != nil {
+		panic(err)
+	}
+	randDeviceOffset1 = buf[0]
+	randDeviceOffset2 = buf[1]
+}
+
+// Constants for fan and temperature bits.
 const (
-	outputBufferSize = cl.CL_size_t(64)
-	globalWorksize   = 65536 * 1024
-	localWorksize    = 64
-	uint32Size       = cl.CL_size_t(unsafe.Sizeof(cl.CL_uint(0)))
-
-	nonce0Word = 3
-	nonce1Word = 4
-	nonce2Word = 5
+	ADLFanFailSafe            = uint32(80)
+	AMDGPUFanFailSafe         = uint32(204)
+	AMDGPUFanMax              = uint32(255)
+	AMDTempDivisor            = uint32(1000)
+	ChangeLevelNone           = "None"
+	ChangeLevelSmall          = "Small"
+	ChangeLevelLarge          = "Large"
+	DeviceKindAMDGPU          = "AMDGPU"
+	DeviceKindADL             = "ADL"
+	DeviceKindNVML            = "NVML"
+	DeviceKindUnknown         = "Unknown"
+	DeviceTypeCPU             = "CPU"
+	DeviceTypeGPU             = "GPU"
+	FanControlHysteresis      = uint32(3)
+	FanControlAdjustmentLarge = uint32(10)
+	FanControlAdjustmentSmall = uint32(5)
+	SeverityLow               = "Low"
+	SeverityHigh              = "High"
+	TargetLower               = "Lower"
+	TargetHigher              = "Raise"
+	TargetNone                = "None"
 )
 
-var zeroSlice = []cl.CL_uint{cl.CL_uint(0)}
-
-func loadProgramSource(filename string) ([][]byte, []cl.CL_size_t, error) {
-	var program_buffer [1][]byte
-	var program_size [1]cl.CL_size_t
-
-	/* Read each program file and place content into buffer array */
-	program_handle, err := os.Open(filename)
-	if err != nil {
-		return nil, nil, err
+// initNonces initialize the nonces for the device such that each device in the
+// same system is doing different work while also helping prevent collisions
+// across multiple processes and systems working on the same template.
+func (d *Device) initNonces() error {
+	// Read cryptographically random data for use below in setting the initial
+	// nonces.
+	var buf [8]byte
+	if _, err := io.ReadFull(rand.Reader, buf[:]); err != nil {
+		return fmt.Errorf("unable to read random value: %w", err)
 	}
-	defer program_handle.Close()
+	extraNonceRandOffset := binary.LittleEndian.Uint32(buf[0:])
+	extraNonce2RandOffset := binary.LittleEndian.Uint32(buf[4:])
 
-	fi, err := program_handle.Stat()
-	if err != nil {
-		return nil, nil, err
-	}
-	program_size[0] = cl.CL_size_t(fi.Size())
-	program_buffer[0] = make([]byte, program_size[0])
-	read_size, err := program_handle.Read(program_buffer[0])
-	if err != nil || cl.CL_size_t(read_size) != program_size[0] {
-		return nil, nil, err
-	}
+	// Set the extra nonce to a random value.  This value is unique per device
+	// when solo mining.  The extra nonce is assigned by the pool instead when
+	// pool mining.
+	//
+	// When combined with the device ID in the second extra nonce below, this
+	// helps prevent collisions across multiple processes and systems working on
+	// the same template.
+	d.extraNonce = extraNonceRandOffset
 
-	return program_buffer[:], program_size[:], nil
+	// Set the initial second extra nonce as follows:
+	// - The first byte is the device ID offset by the first per-process random
+	//   device offset
+	// - The remaining 3 bytes are a per-device random extra nonce offset
+	//
+	// This ensures each device in the same system is doing different work (up
+	// to 256 devices).
+	//
+	// This implies that the total search space is 7 bytes when combining the 3
+	// bytes provided by this value along with the normal 4-byte nonce.  In
+	// other words, it supports devices up to ~72 Ph/s.
+	deviceOffset := (uint32(d.index) + uint32(randDeviceOffset1)) % 256
+	d.extraNonce2 = deviceOffset<<24 | extraNonce2RandOffset&0x00ffffff
+
+	minrLog.Debugf("DEV #%d: initial extraNonce %x, initial extraNonce2: %x",
+		d.index, d.extraNonce, d.extraNonce2)
+	return nil
 }
 
-type Work struct {
-	Data   [192]byte
-	Target [32]byte
-}
-
-type Device struct {
-	index        int
-	platformID   cl.CL_platform_id
-	deviceID     cl.CL_device_id
-	context      cl.CL_context
-	queue        cl.CL_command_queue
-	outputBuffer cl.CL_mem
-	program      cl.CL_program
-	kernel       cl.CL_kernel
-
-	midstate  [8]uint32
-	lastBlock [16]uint32
-
-	work     Work
-	newWork  chan *Work
-	workDone chan []byte
-	hasWork  bool
-
-	workDoneEMA   float64
-	workDoneLast  float64
-	workDoneTotal float64
-	runningTime   float64
-
-	quit chan struct{}
-}
-
-// Compares a and b as big endian
-func hashSmaller(a, b []byte) bool {
-	for i := len(a) - 1; i >= 0; i-- {
-		if a[i] < b[i] {
-			return true
-		}
-		if a[i] > b[i] {
-			return false
-		}
-	}
-	return false
-}
-
-func clError(status cl.CL_int, f string) error {
-	return fmt.Errorf("%s returned error %s (%d)", f, cl.ERROR_CODES_STRINGS[-status], status)
-}
-
-func NewDevice(index int, platformID cl.CL_platform_id, deviceID cl.CL_device_id, workDone chan []byte) (*Device, error) {
-	d := &Device{
-		index:      index,
-		platformID: platformID,
-		deviceID:   deviceID,
-		quit:       make(chan struct{}),
-		newWork:    make(chan *Work, 5),
-		workDone:   workDone,
-	}
-
-	var status cl.CL_int
-
-	// Create the CL context
-	d.context = cl.CLCreateContext(nil, 1, []cl.CL_device_id{deviceID}, nil, nil, &status)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLCreateContext")
-	}
-
-	// Create the command queue
-	d.queue = cl.CLCreateCommandQueue(d.context, deviceID, 0, &status)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLCreateCommandQueue")
-	}
-
-	// Create the output buffer
-	d.outputBuffer = cl.CLCreateBuffer(d.context, cl.CL_MEM_READ_WRITE, uint32Size*outputBufferSize, nil, &status)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLCreateBuffer")
-	}
-
-	// Load kernel source
-	progSrc, progSize, err := loadProgramSource("blake256.cl")
-	if err != nil {
-		return nil, fmt.Errorf("Could not load kernel source: %v", err)
-	}
-
-	// Create the program
-	d.program = cl.CLCreateProgramWithSource(d.context, 1, progSrc[:], progSize[:], &status)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLCreateProgramWithSource")
-	}
-
-	// Build the program for the device
-	compilerOptions := ""
-	compilerOptions += fmt.Sprintf(" -D WORKSIZE=%d", localWorksize)
-	status = cl.CLBuildProgram(d.program, 1, []cl.CL_device_id{deviceID}, []byte(compilerOptions), nil, nil)
-	if status != cl.CL_SUCCESS {
-		err = clError(status, "CLBuildProgram")
-
-		// Something went wrong! Print what it is.
-		var logSize cl.CL_size_t
-		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, 0, nil, &logSize)
-		if status != cl.CL_SUCCESS {
-			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
-		}
-		var program_log interface{}
-		status = cl.CLGetProgramBuildInfo(d.program, deviceID, cl.CL_PROGRAM_BUILD_LOG, logSize, &program_log, nil)
-		if status != cl.CL_SUCCESS {
-			minrLog.Errorf("Could not obtain compilation error log: %v", clError(status, "CLGetProgramBuildInfo"))
-		}
-		minrLog.Errorf("%s\n", program_log)
-
-		return nil, err
-	}
-
-	// Create the kernel
-	d.kernel = cl.CLCreateKernel(d.program, []byte("search"), &status)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLCreateKernel")
-	}
-
-	return d, nil
-}
-
-func (d *Device) Release() {
-	cl.CLReleaseKernel(d.kernel)
-	cl.CLReleaseProgram(d.program)
-	cl.CLReleaseCommandQueue(d.queue)
-	cl.CLReleaseMemObject(d.outputBuffer)
-	cl.CLReleaseContext(d.context)
-}
-
-func (d *Device) updateCurrentWork() {
-	var w *Work
+func (d *Device) updateCurrentWork(ctx context.Context) {
+	var w *work.Work
 	if d.hasWork {
 		// If we already have work, we just need to check if there's new one
 		// without blocking if there's not.
@@ -190,11 +112,10 @@ func (d *Device) updateCurrentWork() {
 			return
 		}
 	} else {
-		// If we don't have work, we block until we do. We need to watch for
-		// quit events too.
+		// If we don't have work, we block until we do.
 		select {
 		case w = <-d.newWork:
-		case <-d.quit:
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -202,156 +123,318 @@ func (d *Device) updateCurrentWork() {
 	d.hasWork = true
 
 	d.work = *w
+	minrLog.Tracef("pre-nonce: %x", d.work.Data[:])
 
-	// Set nonce2
-	binary.BigEndian.PutUint32(d.work.Data[128+4*nonce2Word:], uint32(d.index))
+	// Ensure the work data is updated with the extra nonce associated with the
+	// device for solo mining.
+	//
+	// The extra nonce is provided by the pool when pool mining, so there is no
+	// need to update it in that case.
+	const en1Offset = 128 + 4*work.Nonce1Word
+	if d.work.IsGetWork {
+		binary.LittleEndian.PutUint32(d.work.Data[en1Offset:], d.extraNonce)
+	}
 
-	// Reset the hash state
-	copy(d.midstate[:], blake256.IV256[:])
+	// Ensure the work data is updated with the second extra nonce associated
+	// with the device.
+	binary.LittleEndian.PutUint32(d.work.Data[128+4*work.Nonce2Word:],
+		d.extraNonce2)
 
-	// Hash the two first blocks
-	blake256.Block(d.midstate[:], d.work.Data[0:64], 512)
-	blake256.Block(d.midstate[:], d.work.Data[64:128], 1024)
+	// Set additional byte with the device id offset by a second per-process
+	// random device offset to support up to 65536 devices with getwork (solo)
+	// mining.  Pool mining does not support the additional byte, so it is not
+	// needed in that case.  Note that this also means pool mining only supports
+	// 256 devices per client (aka process instance).
+	if d.work.IsGetWork {
+		deviceID := uint8((uint32(d.index) + uint32(randDeviceOffset2)) % 256)
+		d.work.Data[128+4*work.Nonce3Word] = deviceID
+	}
+
+	// Hash the two first blocks.
+	d.midstate = blake3.Block(blake3.IV, d.work.Data[0:64], blake3.FlagChunkStart)
+	d.midstate = blake3.Block(d.midstate, d.work.Data[64:128], 0)
+	minrLog.Tracef("midstate input data for work update %x", d.work.Data[0:128])
 
 	// Convert the next block to uint32 array.
 	for i := 0; i < 16; i++ {
-		d.lastBlock[i] = binary.BigEndian.Uint32(d.work.Data[128+i*4:])
+		d.lastBlock[i] = binary.LittleEndian.Uint32(d.work.Data[128+i*4:])
 	}
+	minrLog.Tracef("work data for work update: %x", d.work.Data)
 }
 
-func (d *Device) Run() {
-	err := d.runDevice()
+func (d *Device) Run(ctx context.Context) {
+	err := d.runDevice(ctx)
 	if err != nil {
 		minrLog.Errorf("Error on device: %v", err)
 	}
 }
 
-func (d *Device) runDevice() error {
-	minrLog.Infof("Started GPU #%d", d.index)
-	outputData := make([]uint32, outputBufferSize)
-	var status cl.CL_int
-	for {
-		d.updateCurrentWork()
+// This is pretty hacky/proof-of-concepty.
+func (d *Device) fanControl() {
+	d.Lock()
+	defer d.Unlock()
+	var fanChangeLevel, fanIntent string
+	var fanChange uint32
+	fanLast := d.fanControlLastFanPercent
 
-		select {
-		case <-d.quit:
-			return nil
-		default:
+	var tempChange uint32
+	var tempChangeLevel, tempDirection string
+	var tempSeverity, tempTargetType string
+
+	var firstRun bool
+
+	tempLast := d.fanControlLastTemp
+	tempMinAllowed := d.tempTarget - FanControlHysteresis
+	tempMaxAllowed := d.tempTarget + FanControlHysteresis
+
+	// Save the values we read for the next time the loop is run
+	fanCur := atomic.LoadUint32(&d.fanPercent)
+	tempCur := atomic.LoadUint32(&d.temperature)
+	d.fanControlLastFanPercent = fanCur
+	d.fanControlLastTemp = tempCur
+
+	// if this is our first run then set some more variables
+	if tempLast == 0 && fanLast == 0 {
+		fanLast = fanCur
+		tempLast = tempCur
+		firstRun = true
+	}
+
+	// Everything is OK so just return without adjustment
+	if tempCur <= tempMaxAllowed && tempCur >= tempMinAllowed {
+		minrLog.Tracef("DEV #%d within acceptable limits "+
+			"curTemp %v is above minimum %v and below maximum %v",
+			d.index, tempCur, tempMinAllowed, tempMaxAllowed)
+		return
+	}
+
+	// Lower the temperature of the device
+	if tempCur > tempMaxAllowed {
+		tempTargetType = TargetLower
+		if tempCur-tempMaxAllowed > FanControlHysteresis {
+			tempSeverity = SeverityHigh
+		} else {
+			tempSeverity = SeverityLow
 		}
+	}
 
-		// Increment nonce1
-		d.lastBlock[nonce1Word]++
-
-		// arg 0: pointer to the buffer
-		obuf := d.outputBuffer
-		status = cl.CLSetKernelArg(d.kernel, 0, cl.CL_size_t(unsafe.Sizeof(obuf)), unsafe.Pointer(&obuf))
-		if status != cl.CL_SUCCESS {
-			return clError(status, "CLSetKernelArg")
+	// Raise the temperature of the device
+	if tempCur < tempMinAllowed {
+		tempTargetType = TargetHigher
+		if tempMaxAllowed-tempCur >= FanControlHysteresis {
+			tempSeverity = SeverityHigh
+		} else {
+			tempSeverity = SeverityLow
 		}
+	}
 
-		// args 1..8: midstate
-		for i := 0; i < 8; i++ {
-			ms := d.midstate[i]
-			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+1), uint32Size, unsafe.Pointer(&ms))
-			if status != cl.CL_SUCCESS {
-				return clError(status, "CLSetKernelArg")
-			}
+	// we increased the fan to lower the device temperature last time
+	if fanLast < fanCur {
+		fanChange = fanCur - fanLast
+		fanIntent = TargetHigher
+	}
+	// we decreased the fan to raise the device temperature last time
+	if fanLast > fanCur {
+		fanChange = fanLast - fanCur
+		fanIntent = TargetLower
+	}
+	// we didn't make any changes
+	if fanLast == fanCur {
+		fanIntent = TargetNone
+	}
+
+	if fanChange == 0 {
+		fanChangeLevel = ChangeLevelNone
+	} else if fanChange == FanControlAdjustmentSmall {
+		fanChangeLevel = ChangeLevelSmall
+	} else if fanChange == FanControlAdjustmentLarge {
+		fanChangeLevel = ChangeLevelLarge
+	} else {
+		// XXX Seems the AMDGPU driver may not support all values or
+		// changes values underneath us
+		minrLog.Tracef("DEV #%d fan changed by an unexpected value %v", d.index,
+			fanChange)
+		if fanChange < FanControlAdjustmentSmall {
+			fanChangeLevel = ChangeLevelSmall
+		} else {
+			fanChangeLevel = ChangeLevelLarge
 		}
+	}
 
-		// args 9..20: lastBlock except nonce
-		i2 := 0
-		for i := 0; i < 12; i++ {
-			if i2 == nonce0Word {
-				i2++
-			}
-			lb := d.lastBlock[i2]
-			status = cl.CLSetKernelArg(d.kernel, cl.CL_uint(i+9), uint32Size, unsafe.Pointer(&lb))
-			if status != cl.CL_SUCCESS {
-				return clError(status, "CLSetKernelArg")
-			}
-			i2++
+	if tempLast < tempCur {
+		tempChange = tempCur - tempLast
+		tempDirection = "Up"
+	}
+	if tempLast > tempCur {
+		tempChange = tempLast - tempCur
+		tempDirection = "Down"
+	}
+	if tempLast == tempCur {
+		tempDirection = "Stable"
+	}
+
+	if tempChange == 0 {
+		tempChangeLevel = ChangeLevelNone
+	} else if tempChange > FanControlHysteresis {
+		tempChangeLevel = ChangeLevelLarge
+	} else {
+		tempChangeLevel = ChangeLevelSmall
+	}
+
+	minrLog.Tracef("DEV #%d firstRun %v fanChange %v fanChangeLevel %v "+
+		"fanIntent %v tempChange %v tempChangeLevel %v tempDirection %v "+
+		" tempSeverity %v tempTargetType %v", d.index, firstRun, fanChange,
+		fanChangeLevel, fanIntent, tempChange, tempChangeLevel, tempDirection,
+		tempSeverity, tempTargetType)
+
+	// We have no idea if the device is starting cold or re-starting hot
+	// so only adjust the fans upwards a little bit.
+	if firstRun {
+		if tempTargetType == TargetLower {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+			return
 		}
+	}
 
-		// Clear the found count from the buffer
-		status = cl.CLEnqueueWriteBuffer(d.queue, d.outputBuffer, cl.CL_FALSE, 0, uint32Size, unsafe.Pointer(&zeroSlice[0]), 0, nil, nil)
-		if status != cl.CL_SUCCESS {
-			return clError(status, "CLEnqueueWriteBuffer")
+	// we didn't do anything last time so just match our change to the severity
+	if fanIntent == TargetNone {
+		if tempSeverity == SeverityLow {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+		} else {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelLarge)
 		}
+	}
 
-		// Execute the kernel
-		var globalWorkSize [1]cl.CL_size_t
-		globalWorkSize[0] = globalWorksize
-		var localWorkSize [1]cl.CL_size_t
-		localWorkSize[0] = localWorksize
-		status = cl.CLEnqueueNDRangeKernel(d.queue, d.kernel, 1, nil, globalWorkSize[:], localWorkSize[:], 0, nil, nil)
-		if status != cl.CL_SUCCESS {
-			return clError(status, "CLEnqueueNDRangeKernel")
+	// XXX could do some more hysteresis stuff here
+
+	// we tried to raise or lower the temperature but it didn't work so
+	// do it some more according to the severity level
+	if fanIntent == tempTargetType {
+		if tempSeverity == SeverityLow {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
+		} else {
+			fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelLarge)
 		}
+	}
 
-		// Read the output buffer
-		cl.CLEnqueueReadBuffer(d.queue, d.outputBuffer, cl.CL_TRUE, 0, uint32Size*outputBufferSize, unsafe.Pointer(&outputData[0]), 0, nil, nil)
-		if status != cl.CL_SUCCESS {
-			return clError(status, "CLEnqueueReadBuffer")
-		}
-
-		for i := uint32(0); i < outputData[0]; i++ {
-			minrLog.Debugf("Found candidate: %d", outputData[i+1])
-			d.foundCandidate(d.lastBlock[nonce1Word], outputData[i+1])
-		}
-
-		d.workDoneLast += globalWorksize
-		d.workDoneTotal += globalWorksize
+	// we raised or lowered the temperature too much so just do a small
+	// adjustment
+	if fanIntent != tempTargetType {
+		fanControlSet(d.index, fanCur, tempTargetType, ChangeLevelSmall)
 	}
 }
 
-func (d *Device) foundCandidate(nonce1 uint32, nonce0 uint32) {
-	// Construct the final block header
+func (d *Device) fanControlSupported(kind string) bool {
+	fanControlDrivers := []string{DeviceKindADL, DeviceKindAMDGPU}
+
+	for _, driver := range fanControlDrivers {
+		if driver == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Device) foundCandidate(ts, nonce0, nonce1, nonce2 uint32) {
+	d.Lock()
+	defer d.Unlock()
+	// Construct the final block header.
 	data := make([]byte, 192)
 	copy(data, d.work.Data[:])
-	binary.BigEndian.PutUint32(data[128+4*nonce1Word:], nonce1)
-	binary.BigEndian.PutUint32(data[128+4*nonce0Word:], nonce0)
 
-	// Perform the final hash block to get the hash
-	var state [8]uint32
-	copy(state[:], d.midstate[:])
-	blake256.Block(state[:], data[128:192], 1440)
+	binary.LittleEndian.PutUint32(data[128+4*work.TimestampWord:], ts)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce0Word:], nonce0)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce1Word:], nonce1)
+	binary.LittleEndian.PutUint32(data[128+4*work.Nonce2Word:], nonce2)
+	hash := chainhash.Hash(blake3.FinalBlock(d.midstate, data[128:180]))
 
-	var hash [32]byte
-	for i := 0; i < 8; i++ {
-		binary.BigEndian.PutUint32(hash[i*4:], state[i])
+	// Hashes that reach this logic and fail the minimal proof of
+	// work check are considered to be hardware errors.
+	hashNum := standalone.HashToBig(&hash)
+	if hashNum.Cmp(chainParams.PowLimit) > 0 {
+		minrLog.Errorf("DEV #%d: Hardware error found, hash %v above "+
+			"minimum target %064x", d.index, hash, chainParams.PowLimit)
+		d.invalidShares++
+		return
 	}
 
-	if hashSmaller(hash[:], d.work.Target[:]) {
-		minrLog.Infof("Found hash!!  %s", hex.EncodeToString(hash[:]))
-		d.workDone <- data
+	d.allDiffOneShares++
+
+	if !cfg.Benchmark {
+		// Assess versus the pool or daemon target.
+		if hashNum.Cmp(d.work.Target) > 0 {
+			minrLog.Debugf("DEV #%d: Hash %v bigger than target %064x (boo)",
+				d.index, hash, d.work.Target)
+		} else {
+			minrLog.Infof("DEV #%d: Found hash with work below target! %v (yay)",
+				d.index, hash)
+			d.validShares++
+			d.workDone <- data
+		}
 	}
 }
 
-func (d *Device) Stop() {
-	close(d.quit)
-}
-
-func (d *Device) SetWork(w *Work) {
-	d.newWork <- w
-}
-
-func formatHashrate(h float64) string {
-	if h > 1000000000 {
-		return fmt.Sprintf("%.3f GH/s", h/1000000000)
-	} else if h > 1000000 {
-		return fmt.Sprintf("%.3f MH/s", h/1000000)
-	} else if h > 1000 {
-		return fmt.Sprintf("%.3f kH/s", h/1000)
-	} else {
-		return fmt.Sprintf("%.3f GH/s", h)
+func (d *Device) SetWork(ctx context.Context, w *work.Work) {
+	select {
+	case d.newWork <- w:
+	case <-ctx.Done():
 	}
 }
 
 func (d *Device) PrintStats() {
-	alpha := 0.95
-	d.workDoneEMA = d.workDoneEMA*alpha + d.workDoneLast*(1-alpha)
-	d.workDoneLast = 0
-	d.runningTime += 1.0
+	secondsElapsed := uint32(time.Now().Unix()) - d.started
+	if secondsElapsed == 0 {
+		return
+	}
 
-	minrLog.Infof("EMA %s, avg %s", formatHashrate(d.workDoneEMA), formatHashrate(d.workDoneTotal/d.runningTime))
+	d.Lock()
+	defer d.Unlock()
+
+	averageHashRate, fanPercent, temperature := d.Status()
+
+	if fanPercent != 0 || temperature != 0 {
+		minrLog.Infof("DEV #%d (%s) %v Fan=%v%% T=%vC",
+			d.index,
+			d.deviceName,
+			util.FormatHashRate(averageHashRate),
+			fanPercent,
+			temperature)
+	} else {
+		minrLog.Infof("DEV #%d (%s) %v",
+			d.index,
+			d.deviceName,
+			util.FormatHashRate(averageHashRate),
+		)
+	}
+}
+
+// UpdateFanTemp updates a device's statistics.
+func (d *Device) UpdateFanTemp() {
+	d.Lock()
+	defer d.Unlock()
+	if d.fanTempActive {
+		// For now amd and nvidia do more or less the same thing
+		// but could be split up later.  Anything else (Intel) just
+		// doesn't do anything.
+		switch d.kind {
+		case DeviceKindADL, DeviceKindAMDGPU, DeviceKindNVML:
+			fanPercent, temperature := deviceStats(d.index)
+			atomic.StoreUint32(&d.fanPercent, fanPercent)
+			atomic.StoreUint32(&d.temperature, temperature)
+		}
+	}
+}
+
+func (d *Device) Status() (float64, uint32, uint32) {
+	secondsElapsed := uint32(time.Now().Unix()) - d.started
+	diffOneShareHashesAvg := uint64(0x00000000FFFFFFFF)
+
+	averageHashRate := (float64(diffOneShareHashesAvg) *
+		float64(d.allDiffOneShares)) /
+		float64(secondsElapsed)
+
+	fanPercent := atomic.LoadUint32(&d.fanPercent)
+	temperature := atomic.LoadUint32(&d.temperature)
+
+	return averageHashRate, fanPercent, temperature
 }

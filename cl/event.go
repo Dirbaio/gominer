@@ -1,28 +1,23 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-
-extern void go_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data);
-static void CL_CALLBACK c_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data) {
+// this needs to come out
+extern void	go_evt_notify(cl_event event, cl_int event_command_exec_status,
+		    void *user_data);
+static void CL_CALLBACK
+c_evt_notify(cl_event event, cl_int event_command_exec_status, void *user_data)
+{
 	go_evt_notify(event, event_command_exec_status, user_data);
 }
 
-static cl_int CLSetEventCallback(	cl_event event,
-									cl_int command_exec_callback_type,
-									void *user_data){
-    return clSetEventCallback(event, command_exec_callback_type, c_evt_notify, user_data);
+static cl_int
+CLSetEventCallback(cl_event event, cl_int command_exec_callback_type,
+    void *user_data)
+{
+    return clSetEventCallback(event, command_exec_callback_type, c_evt_notify,
+        user_data);
 }
 */
 import "C"
@@ -47,10 +42,9 @@ func go_evt_notify(event C.cl_event, event_command_exec_status C.cl_int, user_da
 func CLCreateUserEvent(context CL_context,
 	errcode_ret *CL_int) CL_event {
 
-	var c_event C.cl_event
 	var c_errcode_ret C.cl_int
 
-	c_event = C.clCreateUserEvent(context.cl_context, &c_errcode_ret)
+	c_event := C.clCreateUserEvent(context.cl_context, &c_errcode_ret)
 
 	if errcode_ret != nil {
 		*errcode_ret = CL_int(c_errcode_ret)
@@ -71,8 +65,7 @@ func CLWaitForEvents(num_events CL_uint,
 		return CL_INVALID_VALUE
 	}
 
-	var c_event_list []C.cl_event
-	c_event_list = make([]C.cl_event, len(event_list))
+	c_event_list := make([]C.cl_event, len(event_list))
 	for i := 0; i < len(event_list); i++ {
 		c_event_list[i] = event_list[i].cl_event
 	}

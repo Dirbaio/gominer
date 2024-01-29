@@ -1,25 +1,18 @@
-
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
+extern void	go_mem_notify(cl_mem memobj, void *user_data);
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-extern void go_mem_notify(cl_mem memobj, void *user_data);
-static void CL_CALLBACK c_mem_notify(cl_mem memobj, void *user_data) {
+static void CL_CALLBACK
+c_mem_notify(cl_mem memobj, void *user_data)
+{
 	go_mem_notify(memobj, user_data);
 }
 
-static cl_int CLSetMemObjectDestructorCallback(cl_mem memobj, void *user_data){
+static cl_int
+CLSetMemObjectDestructorCallback(cl_mem memobj, void *user_data)
+{
     return clSetMemObjectDestructorCallback(memobj, c_mem_notify, user_data);
 }
 */
@@ -80,8 +73,7 @@ func CLEnqueueUnmapMemObject(command_queue CL_command_queue,
 	var c_errcode_ret C.cl_int
 
 	if num_events_in_wait_list != 0 {
-		var c_event_wait_list []C.cl_event
-		c_event_wait_list = make([]C.cl_event, num_events_in_wait_list)
+		c_event_wait_list := make([]C.cl_event, num_events_in_wait_list)
 		for i := 0; i < int(num_events_in_wait_list); i++ {
 			c_event_wait_list[i] = event_wait_list[i].cl_event
 		}

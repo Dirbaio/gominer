@@ -1,39 +1,48 @@
-
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
+#include "cl.h"
 
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+// this needs to come out
+typedef void*	pVoid;
+extern void	go_ctx_notify(char *errinfo, void *private_info, int cb,
+		    void *user_data);
 
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
-
-extern void go_ctx_notify(char *errinfo, void *private_info, int cb, void *user_data);
-static void CL_CALLBACK c_ctx_notify(const char *errinfo, const void *private_info, size_t cb, void *user_data) {
+static void CL_CALLBACK	c_ctx_notify(const char *errinfo,
+			    const void *private_info, size_t cb,
+			    void *user_data)
+{
 	go_ctx_notify((char *)errinfo, (void *)private_info, cb, user_data);
 }
 
-static cl_context CLCreateContext(	const cl_context_properties *  	properties,
-					                cl_uint                  		num_devices,
-					                const cl_device_id *     		devices,
-					                void *                   		user_data,
-					                cl_int *                 		errcode_ret){
-	return clCreateContext(properties, num_devices, devices, c_ctx_notify, user_data, errcode_ret);
+static pVoid
+*allocArray(size_t n)
+{
+	return (pVoid*)malloc(n * sizeof(pVoid));
 }
 
-static cl_context CLCreateContextFromType(	const cl_context_properties *  	properties,
-					                		cl_device_type     				device_type,
-					                		void *                   		user_data,
-					                		cl_int *                 		errcode_ret){
-    return clCreateContextFromType(properties, device_type, c_ctx_notify, user_data, errcode_ret);
+static void
+freeArray(pVoid* p)
+{
+	free(p);
 }
+
+static cl_context
+CLCreateContext(const cl_context_properties *properties, cl_uint num_devices,
+    const cl_device_id *devices, void *user_data, cl_int *errcode_ret)
+{
+	return clCreateContext(properties, num_devices, devices, c_ctx_notify,
+	    user_data, errcode_ret);
+}
+
+static cl_context
+CLCreateContextFromType(const cl_context_properties *properties,
+    cl_device_type device_type, void *user_data, cl_int *errcode_ret)
+{
+	return clCreateContextFromType(properties, device_type, c_ctx_notify,
+	    user_data, errcode_ret);
+}
+
 */
 import "C"
 import "unsafe"
@@ -48,8 +57,7 @@ func init() {
 
 //export go_ctx_notify
 func go_ctx_notify(errinfo *C.char, private_info unsafe.Pointer, cb C.int, user_data unsafe.Pointer) {
-	var c_user_data []unsafe.Pointer
-	c_user_data = *(*[]unsafe.Pointer)(user_data)
+	c_user_data := *(*[]unsafe.Pointer)(user_data)
 	ctx_notify[c_user_data[1]](C.GoString(errinfo), private_info, int(cb), c_user_data[0])
 }
 
@@ -67,13 +75,12 @@ func CLCreateContext(properties []CL_context_properties,
 		c_errcode_ret = CL_INVALID_VALUE
 		c_context = nil
 	} else {
-		var c_properties []C.cl_context_properties
 		var c_properties_ptr *C.cl_context_properties
 		var c_devices []C.cl_device_id
 		var c_devices_ptr *C.cl_device_id
 
 		if properties != nil {
-			c_properties = make([]C.cl_context_properties, len(properties))
+			c_properties := make([]C.cl_context_properties, len(properties))
 			for i := 0; i < len(properties); i++ {
 				c_properties[i] = C.cl_context_properties(properties[i])
 			}
@@ -85,7 +92,7 @@ func CLCreateContext(properties []CL_context_properties,
 		if devices != nil {
 			c_devices = make([]C.cl_device_id, len(devices))
 			for i := 0; i < len(devices); i++ {
-				c_devices[i] = C.cl_device_id(devices[i].cl_device_id)
+				c_devices[i] = devices[i].cl_device_id
 			}
 			c_devices_ptr = &c_devices[0]
 		} else {
@@ -93,12 +100,14 @@ func CLCreateContext(properties []CL_context_properties,
 		}
 
 		if pfn_notify != nil {
-			var c_user_data []unsafe.Pointer
-			c_user_data = make([]unsafe.Pointer, 2)
-			c_user_data[0] = user_data
-			c_user_data[1] = unsafe.Pointer(&pfn_notify)
+			//var c_user_data []unsafe.Pointer
+			//c_user_data = make([]unsafe.Pointer, 2)
+			arr := C.allocArray(2)
+			c_user_data := (*[2]C.pVoid)(unsafe.Pointer(arr))[:]
+			c_user_data[0] = (C.pVoid)(user_data)
+			c_user_data[1] = (C.pVoid)(unsafe.Pointer(&pfn_notify))
 
-			ctx_notify[c_user_data[1]] = pfn_notify
+			ctx_notify[unsafe.Pointer(&pfn_notify)] = pfn_notify
 
 			c_context = C.CLCreateContext(c_properties_ptr,
 				C.cl_uint(len(c_devices)),
@@ -106,6 +115,7 @@ func CLCreateContext(properties []CL_context_properties,
 				unsafe.Pointer(&c_user_data),
 				&c_errcode_ret)
 
+			C.freeArray(arr)
 		} else {
 			c_context = C.clCreateContext(c_properties_ptr,
 				C.cl_uint(len(c_devices)),
@@ -113,7 +123,6 @@ func CLCreateContext(properties []CL_context_properties,
 				nil,
 				nil,
 				&c_errcode_ret)
-
 		}
 	}
 
@@ -137,11 +146,10 @@ func CLCreateContextFromType(properties []CL_context_properties,
 		c_errcode_ret = CL_INVALID_VALUE
 		c_context = nil
 	} else {
-		var c_properties []C.cl_context_properties
 		var c_properties_ptr *C.cl_context_properties
 
 		if properties != nil {
-			c_properties = make([]C.cl_context_properties, len(properties))
+			c_properties := make([]C.cl_context_properties, len(properties))
 			for i := 0; i < len(properties); i++ {
 				c_properties[i] = C.cl_context_properties(properties[i])
 			}
@@ -151,18 +159,21 @@ func CLCreateContextFromType(properties []CL_context_properties,
 		}
 
 		if pfn_notify != nil {
-			var c_user_data []unsafe.Pointer
-			c_user_data = make([]unsafe.Pointer, 2)
-			c_user_data[0] = user_data
-			c_user_data[1] = unsafe.Pointer(&pfn_notify)
+			//var c_user_data []unsafe.Pointer
+			//c_user_data = make([]unsafe.Pointer, 2)
+			arr := C.allocArray(2)
+			c_user_data := (*[2]C.pVoid)(unsafe.Pointer(arr))[:]
+			c_user_data[0] = (C.pVoid)(user_data)
+			c_user_data[1] = (C.pVoid)(unsafe.Pointer(&pfn_notify))
 
-			ctx_notify[c_user_data[1]] = pfn_notify
+			ctx_notify[unsafe.Pointer(&pfn_notify)] = pfn_notify
 
 			c_context = C.CLCreateContextFromType(c_properties_ptr,
 				C.cl_device_type(device_type),
 				unsafe.Pointer(&c_user_data),
 				&c_errcode_ret)
 
+			C.freeArray(arr)
 		} else {
 			c_context = C.clCreateContextFromType(c_properties_ptr,
 				C.cl_device_type(device_type),

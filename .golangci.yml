@@ -1,0 +1,44 @@
+run:
+  deadline: 10m
+  build-tags:
+    - opencl
+
+linters:
+  disable-all: true
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - dupword
+    - durationcheck
+    - errorlint
+    - exportloopref
+    - godot
+    - gofmt
+    - goimports
+    - gosimple
+    - grouper
+    - ineffassign
+    - makezero
+    - misspell
+    - nosprintfhostport
+    - prealloc
+    - predeclared
+    - reassign
+    - rowserrcheck
+    - revive
+    - tparallel
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+
+linters-settings:
+  # While every other rule in the revive linter is useful, the var-naming rule
+  # is a bit too strict for this project because it does not allow underscores
+  # in names.
+  revive:
+    rules:
+      - name: var-naming
+        disabled: true

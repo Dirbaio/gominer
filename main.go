@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	"runtime/pprof"
 	"time"
@@ -22,10 +21,15 @@ func gominerMain() error {
 		return err
 	}
 	cfg = tcfg
-	defer backendLog.Flush()
+	defer func() {
+		if logRotator != nil {
+			logRotator.Close()
+		}
+	}()
 
 	// Show version at startup.
-	mainLog.Infof("Version %s", version())
+	mainLog.Infof("Version %s %s (Go version %s %s/%s)", Version, gpuLib(),
+		runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
 	// Enable http profiling server if requested.
 	if cfg.Profile != "" {
@@ -39,7 +43,6 @@ func gominerMain() error {
 			err := http.ListenAndServe(listenAddr, nil)
 			if err != nil {
 				mainLog.Errorf("Unable to create profiler: %v", err)
-				backendLog.Flush()
 				os.Exit(1)
 			}
 		}()
@@ -49,7 +52,7 @@ func gominerMain() error {
 	if cfg.CPUProfile != "" {
 		f, err := os.Create(cfg.CPUProfile)
 		if err != nil {
-			mainLog.Errorf("Unable to create cpu profile: %v", err.Error())
+			mainLog.Errorf("Unable to create cpu profile: %v", err)
 			return err
 		}
 		pprof.StartCPUProfile(f)
@@ -72,21 +75,16 @@ func gominerMain() error {
 		}()
 	}
 
-	m, err := NewMiner()
+	ctx := shutdownListener()
+	m, err := NewMiner(ctx)
 	if err != nil {
 		mainLog.Criticalf("Error initializing miner: %v", err)
 		return err
 	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	go func() {
-		<-c
-		mainLog.Info("Got Control+C, exiting...")
-		m.Stop()
-	}()
-
-	m.Run()
+	if len(cfg.APIListeners) != 0 {
+		go RunMonitor(m)
+	}
+	m.Run(ctx)
 
 	return nil
 }

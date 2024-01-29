@@ -1,118 +1,319 @@
+// Copyright (c) 2016-2023 The Decred developers.
+
 package main
 
 import (
+	"context"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"math/big"
+	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/Dirbaio/gominer/cl"
+	"github.com/decred/dcrd/chaincfg/chainhash"
+	"github.com/decred/dcrd/crypto/blake256"
+	"github.com/decred/dcrd/rpcclient/v8"
+	"github.com/decred/gominer/stratum"
+	"github.com/decred/gominer/util"
+	"github.com/decred/gominer/work"
 )
 
-const benchmark = true
-
-func getCLPlatforms() ([]cl.CL_platform_id, error) {
-	var numPlatforms cl.CL_uint
-	status := cl.CLGetPlatformIDs(0, nil, &numPlatforms)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetPlatformIDs")
-	}
-	platforms := make([]cl.CL_platform_id, numPlatforms)
-	status = cl.CLGetPlatformIDs(numPlatforms, platforms, nil)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetPlatformIDs")
-	}
-	return platforms, nil
-}
-
-// getCLDevices returns the list of devices for the given platform.
-func getCLDevices(platform cl.CL_platform_id) ([]cl.CL_device_id, error) {
-	var numDevices cl.CL_uint
-	status := cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_GPU, 0, nil, &numDevices)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetDeviceIDs")
-	}
-	devices := make([]cl.CL_device_id, numDevices)
-	status = cl.CLGetDeviceIDs(platform, cl.CL_DEVICE_TYPE_ALL, numDevices, devices, nil)
-	if status != cl.CL_SUCCESS {
-		return nil, clError(status, "CLGetDeviceIDs")
-	}
-	return devices, nil
-}
-
 type Miner struct {
+	// The following variables must only be used atomically.
+	validShares   uint64
+	staleShares   uint64
+	invalidShares uint64
+
+	started          uint32
 	devices          []*Device
 	workDone         chan []byte
-	quit             chan struct{}
 	needsWorkRefresh chan struct{}
 	wg               sync.WaitGroup
+	pool             *stratum.Stratum
+
+	rpc *rpcclient.Client
 }
 
-func NewMiner() (*Miner, error) {
+func newStratum(devices []*Device) (*Miner, error) {
+	s, err := stratum.StratumConn(cfg.Pool, cfg.PoolUser, cfg.PoolPassword,
+		cfg.Proxy, cfg.ProxyUser, cfg.ProxyPass, Version, chainParams)
+	if err != nil {
+		return nil, err
+	}
 	m := &Miner{
-		workDone:         make(chan []byte, 10),
-		quit:             make(chan struct{}),
+		devices:          devices,
+		pool:             s,
 		needsWorkRefresh: make(chan struct{}),
 	}
+	return m, nil
+}
 
-	platformIDs, err := getCLPlatforms()
-	if err != nil {
-		return nil, fmt.Errorf("Could not get CL platforms: %v", err)
+// onSoloWork prepares the provided getwork-based work data, which might have
+// either come from getwork directly or from asynchronous work notifications,
+// and updates all of the provided devices with that prepared work.
+func onSoloWork(ctx context.Context, data, target []byte, reason string, devices []*Device) {
+	minrLog.Debugf("Work received: (data: %x, target: %x, reason: %s)", data,
+		target, reason)
+
+	// The bigTarget difficulty is provided in little endian, but big integers
+	// expect big endian, so reverse it accordingly.
+	bigTarget := new(big.Int).SetBytes(util.Reverse(target))
+
+	var workData [192]byte
+	copy(workData[:], data)
+
+	const isGetWork = true
+	timestamp := binary.LittleEndian.Uint32(workData[128+4*work.TimestampWord:])
+	w := work.NewWork(workData, bigTarget, timestamp, uint32(time.Now().Unix()),
+		isGetWork)
+
+	for _, d := range devices {
+		d.SetWork(ctx, w)
 	}
-	platformID := platformIDs[0]
-	deviceIDs, err := getCLDevices(platformID)
+}
+
+func newSoloMiner(ctx context.Context, devices []*Device) (*Miner, error) {
+	var rpc *rpcclient.Client
+	ntfnHandlers := rpcclient.NotificationHandlers{
+		OnBlockConnected: func(blockHeader []byte, transactions [][]byte) {
+			minrLog.Infof("Block connected: %x (%d transactions)", blockHeader, len(transactions))
+		},
+		OnBlockDisconnected: func(blockHeader []byte) {
+			minrLog.Infof("Block disconnected: %x", blockHeader)
+		},
+		OnWork: func(data, target []byte, reason string) {
+			onSoloWork(ctx, data, target, reason, devices)
+		},
+	}
+	// Connect to local dcrd RPC server using websockets.
+	certs, err := os.ReadFile(cfg.RPCCert)
 	if err != nil {
-		return nil, fmt.Errorf("Could not get CL devices for platform: %v", err)
+		return nil, fmt.Errorf("failed to read rpc certificate %v: %w",
+			cfg.RPCCert, err)
 	}
 
-	m.devices = make([]*Device, len(deviceIDs))
-	for i, deviceID := range deviceIDs {
-		var err error
-		m.devices[i], err = NewDevice(i, platformID, deviceID, m.workDone)
-		if err != nil {
-			return nil, err
-		}
+	connCfg := &rpcclient.ConnConfig{
+		Host:         cfg.RPCServer,
+		Endpoint:     "ws",
+		User:         cfg.RPCUser,
+		Pass:         cfg.RPCPassword,
+		Certificates: certs,
+		Proxy:        cfg.Proxy,
+		ProxyUser:    cfg.ProxyUser,
+		ProxyPass:    cfg.ProxyPass,
+	}
+	rpc, err = rpcclient.New(connCfg, &ntfnHandlers)
+	if err != nil {
+		return nil, err
+	}
+	err = rpc.NotifyWork(ctx)
+	if err != nil {
+		rpc.Shutdown()
+		return nil, err
+	}
+	err = rpc.NotifyBlocks(ctx)
+	if err != nil {
+		rpc.Shutdown()
+		return nil, err
+	}
+	m := &Miner{
+		devices: devices,
+		rpc:     rpc,
 	}
 
 	return m, nil
 }
 
-func (m *Miner) workSubmitThread() {
+func newBenchmarkMiner(devices []*Device) *Miner {
+	return &Miner{devices: devices}
+}
+
+func NewMiner(ctx context.Context) (*Miner, error) {
+	workDone := make(chan []byte, 10)
+
+	devices, err := newMinerDevs(workDone)
+	if err != nil {
+		return nil, err
+	}
+	if len(devices) == 0 {
+		return nil, fmt.Errorf("no devices started")
+	}
+
+	var m *Miner
+	switch {
+	case cfg.Benchmark:
+		m = newBenchmarkMiner(devices)
+	case cfg.Pool == "":
+		m, err = newSoloMiner(ctx, devices)
+	default:
+		m, err = newStratum(devices)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	m.workDone = workDone
+	m.started = uint32(time.Now().Unix())
+
+	// Return early on benchmark mode to avoid requiring a dcrd instance to
+	// be running.
+	if cfg.Benchmark {
+		return m, nil
+	}
+
+	// Perform an initial call to getwork when solo mining so work is available
+	// immediately.
+	if cfg.Pool == "" {
+		workResult, err := m.rpc.GetWork(ctx)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to retrieve initial work: %w", err)
+		}
+
+		data, err := hex.DecodeString(workResult.Data)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to decode work data: %w", err)
+		}
+		target, err := hex.DecodeString(workResult.Target)
+		if err != nil {
+			m.rpc.Shutdown()
+			return nil, fmt.Errorf("unable to decode work target: %w", err)
+		}
+		onSoloWork(ctx, data, target, "initialwork", devices)
+	}
+
+	return m, nil
+}
+
+func (m *Miner) workSubmitThread(ctx context.Context) {
 	defer m.wg.Done()
 
 	for {
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case data := <-m.workDone:
-			accepted, err := GetWorkSubmit(data)
-			if err != nil {
-				minrLog.Errorf("Error submitting work: %v", err)
+			// Only use that is we are not using a pool.
+			if m.pool == nil {
+				// Solo
+				accepted, err := m.rpc.GetWorkSubmit(ctx, hex.EncodeToString(data))
+				if err != nil {
+					atomic.AddUint64(&m.invalidShares, 1)
+					minrLog.Errorf("failed to submit work: %w", err)
+					continue
+				} else if !accepted {
+					atomic.AddUint64(&m.invalidShares, 1)
+					minrLog.Error("work not accepted")
+					continue
+				}
+				atomic.AddUint64(&m.validShares, 1)
+				minrLog.Infof("Submitted work successfully: block hash %v",
+					chainhash.Hash(blake256.Sum256(data[:180])))
 			} else {
-				minrLog.Errorf("Submitted work successfully: %v", accepted)
-				m.needsWorkRefresh <- struct{}{}
+				submitted, err := GetPoolWorkSubmit(data, m.pool)
+				if err != nil {
+					switch {
+					case errors.Is(err, stratum.ErrStratumStaleWork):
+						atomic.AddUint64(&m.staleShares, 1)
+						minrLog.Debugf("Share submitted to pool was stale")
+
+					default:
+						atomic.AddUint64(&m.invalidShares, 1)
+						minrLog.Errorf("Error submitting work to pool: %v", err)
+					}
+				} else {
+					if submitted {
+						minrLog.Debugf("Submitted work to pool successfully: %v",
+							submitted)
+					}
+
+					select {
+					case m.needsWorkRefresh <- struct{}{}:
+					case <-ctx.Done():
+					}
+				}
 			}
 		}
 	}
 }
 
-func (m *Miner) workRefreshThread() {
+func (m *Miner) workRefreshThread(ctx context.Context) {
 	defer m.wg.Done()
 
-	t := time.NewTicker(time.Second)
+	t := time.NewTicker(100 * time.Millisecond)
 	defer t.Stop()
 
 	for {
-		work, err := GetWork()
-		if err != nil {
-			minrLog.Errorf("Error in getwork: %v", err)
+		// Stratum only code.
+		m.pool.Lock()
+		if m.pool.PoolWork.NewWork {
+			work, err := GetPoolWork(m.pool)
+			m.pool.Unlock()
+			if err != nil {
+				minrLog.Errorf("Error in getpoolwork: %v", err)
+			} else {
+				for _, d := range m.devices {
+					d.SetWork(ctx, work)
+				}
+			}
 		} else {
-			for _, d := range m.devices {
-				d.SetWork(work)
+			m.pool.Unlock()
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		case <-m.needsWorkRefresh:
+		}
+	}
+}
+
+func (m *Miner) printStatsThread(ctx context.Context) {
+	defer m.wg.Done()
+
+	t := time.NewTicker(time.Second * 5)
+	defer t.Stop()
+
+	for {
+		if !cfg.Benchmark {
+			valid, rejected, stale, total, utility := m.Status()
+
+			if cfg.Pool != "" {
+				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Stale: %v, Total: %v",
+					valid,
+					rejected,
+					stale,
+					total,
+				)
+				secondsElapsed := uint32(time.Now().Unix()) - m.started
+				if (secondsElapsed / 60) > 0 {
+					minrLog.Infof("Global utility (accepted shares/min): %v", utility)
+				}
+			} else {
+				minrLog.Infof("Global stats: Accepted: %v, Rejected: %v, Total: %v",
+					valid,
+					rejected,
+					total,
+				)
+			}
+		}
+
+		for _, d := range m.devices {
+			d.UpdateFanTemp()
+			d.PrintStats()
+			if d.fanControlActive {
+				d.fanControl()
 			}
 		}
 
 		select {
-		case <-m.quit:
+		case <-ctx.Done():
 			return
 		case <-t.C:
 		case <-m.needsWorkRefresh:
@@ -120,61 +321,54 @@ func (m *Miner) workRefreshThread() {
 	}
 }
 
-func (m *Miner) printStatsThread() {
-	defer m.wg.Done()
-
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
-
-	for {
-		for _, d := range m.devices {
-			d.PrintStats()
-		}
-
-		select {
-		case <-m.quit:
-			return
-		case <-t.C:
-		case <-m.needsWorkRefresh:
-		}
-	}
-}
-
-func (m *Miner) Run() {
+func (m *Miner) Run(ctx context.Context) {
 	m.wg.Add(len(m.devices))
 
 	for _, d := range m.devices {
 		device := d
 		go func() {
-			device.Run()
+			device.Run(ctx)
 			device.Release()
 			m.wg.Done()
 		}()
 	}
 
 	m.wg.Add(1)
-	go m.workSubmitThread()
+	go m.workSubmitThread(ctx)
 
 	if cfg.Benchmark {
 		minrLog.Warn("Running in BENCHMARK mode! No real mining taking place!")
-		work := &Work{}
+		work := &work.Work{}
 		for _, d := range m.devices {
-			d.SetWork(work)
+			d.SetWork(ctx, work)
 		}
-	} else {
+	} else if m.pool != nil {
 		m.wg.Add(1)
-		go m.workRefreshThread()
+		go m.workRefreshThread(ctx)
 	}
 
 	m.wg.Add(1)
-	go m.printStatsThread()
+	go m.printStatsThread(ctx)
 
 	m.wg.Wait()
 }
 
-func (m *Miner) Stop() {
-	close(m.quit)
-	for _, d := range m.devices {
-		d.Stop()
+func (m *Miner) Status() (uint64, uint64, uint64, uint64, float64) {
+	if cfg.Pool != "" {
+		valid := atomic.LoadUint64(&m.pool.ValidShares)
+		rejected := atomic.LoadUint64(&m.pool.InvalidShares)
+		stale := atomic.LoadUint64(&m.staleShares)
+		total := valid + rejected + stale
+
+		secondsElapsed := uint32(time.Now().Unix()) - m.started
+		utility := float64(valid) / (float64(secondsElapsed) / float64(60))
+
+		return valid, rejected, stale, total, utility
 	}
+
+	valid := atomic.LoadUint64(&m.validShares)
+	rejected := atomic.LoadUint64(&m.invalidShares)
+	total := valid + rejected
+
+	return valid, rejected, 0, total, 0
 }

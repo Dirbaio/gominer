@@ -1,138 +1,71 @@
+// Copyright (c) 2016-2023 The Decred developers.
+
 package main
 
 import (
-	"bytes"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"time"
+
+	"github.com/decred/gominer/stratum"
+	"github.com/decred/gominer/work"
 )
 
-type getWorkResponseJson struct {
-	Result struct {
-		Data   string
-		Target string
+// GetPoolWork gets work from a stratum enabled pool.
+func GetPoolWork(pool *stratum.Stratum) (*work.Work, error) {
+	// Get Next work for stratum and mark it as used.
+	if pool.PoolWork.NewWork {
+		poolLog.Debug("Received new work from pool.")
+		// Mark used.
+		pool.PoolWork.NewWork = false
+
+		if pool.PoolWork.JobID == "" {
+			return nil, fmt.Errorf("no work available (no job id)")
+		}
+
+		err := pool.PrepWork()
+		if err != nil {
+			return nil, err
+		}
+
+		poolLog.Debugf("new job %q height %v", pool.PoolWork.JobID,
+			pool.PoolWork.Height)
+
+		return pool.PoolWork.Work, nil
 	}
-	Error *struct {
-		Code    int
-		Message string
+
+	// Return the work we already had, do not recalculate
+	if pool.PoolWork.Work != nil {
+		return pool.PoolWork.Work, nil
 	}
+
+	return nil, fmt.Errorf("no work available")
 }
 
-type getWorkSubmitResponseJson struct {
-	Result bool
-	Error  *struct {
-		Code    int
-		Message string
-	}
-}
-
-var (
-	httpClient *http.Client
-)
-
-const (
-	MaxIdleConnections int = 20
-	RequestTimeout     int = 5
-)
-
-// init HTTPClient
-func init() {
-	httpClient = createHTTPClient()
-}
-
-// createHTTPClient for connection re-use
-func createHTTPClient() *http.Client {
-	client := &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost: MaxIdleConnections,
-		},
-		Timeout: time.Duration(RequestTimeout) * time.Second,
-	}
-
-	return client
-}
-
-// GetWork makes a getwork RPC call and returns the result (data and target)
-func GetWork() (*Work, error) {
-	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": [], "id": 1}`)
-	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := ioutil.ReadAll(resp.Body)
-	if resp.Status != "200 OK" {
-		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, body)
-	}
-
-	var res getWorkResponseJson
-	err = json.Unmarshal(body, &res)
-	if err != nil {
-		return nil, err
-	}
-
-	if res.Error != nil {
-		return nil, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code, res.Error.Message)
-	}
-
-	data, err := hex.DecodeString(res.Result.Data)
-	if err != nil {
-		return nil, err
-	}
-	if len(data) != 192 {
-		return nil, fmt.Errorf("Wrong data length: got %d, expected 192", len(data))
-	}
-	target, err := hex.DecodeString(res.Result.Target)
-	if err != nil {
-		return nil, err
-	}
-	if len(target) != 32 {
-		return nil, fmt.Errorf("Wrong target length: got %d, expected 32", len(target))
-	}
-
-	var w Work
-	copy(w.Data[:], data)
-	copy(w.Target[:], target)
-	return &w, nil
-}
-
-// GetWork makes a getwork RPC call and returns the result (data and target)
-func GetWorkSubmit(data []byte) (bool, error) {
-	hexData := hex.EncodeToString(data)
-	jsonStr := []byte(`{"jsonrpc": "2.0", "method": "getwork", "params": ["` + hexData + `"], "id": 1}`)
-	req, err := http.NewRequest("POST", cfg.RPCConnect, bytes.NewBuffer(jsonStr))
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := ioutil.ReadAll(resp.Body)
-	if resp.Status != "200 OK" {
-		return false, fmt.Errorf("error calling getwork (%s): %s", resp.Status, body)
-	}
-
-	var res getWorkSubmitResponseJson
-	err = json.Unmarshal(body, &res)
+// GetPoolWorkSubmit sends the result to the stratum enabled pool.
+func GetPoolWorkSubmit(data []byte, pool *stratum.Stratum) (bool, error) {
+	pool.Lock()
+	defer pool.Unlock()
+	sub, err := pool.PrepSubmit(data)
 	if err != nil {
 		return false, err
 	}
 
-	if res.Error != nil {
-		return false, fmt.Errorf("JSONRPC Error %d: %s", res.Error.Code, res.Error.Message)
+	// JSON encode.
+	m, err := json.Marshal(sub)
+	if err != nil {
+		return false, err
 	}
 
-	return res.Result, nil
+	// Send.
+	poolLog.Tracef("%s", m)
+	_, err = pool.Conn.Write(m)
+	if err != nil {
+		return false, err
+	}
+	_, err = pool.Conn.Write([]byte("\n"))
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }

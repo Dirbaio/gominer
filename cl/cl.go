@@ -1,18 +1,7 @@
 package cl
 
 /*
-#cgo CFLAGS: -I CL
-#cgo !darwin LDFLAGS: -lOpenCL
-#cgo darwin LDFLAGS: -framework OpenCL
-
-#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-
-#ifdef __APPLE__
-#include "OpenCL/opencl.h"
-#else
-#include "CL/opencl.h"
-#endif
+#include "cl.h"
 */
 import "C"
 
@@ -158,7 +147,7 @@ type CL_channel_order CL_uint
 type CL_channel_type CL_uint
 type CL_mem_flags CL_bitfield
 
-//type CL_svm_mem_flags CL_bitfield
+// type CL_svm_mem_flags CL_bitfield
 type CL_mem_object_type CL_uint
 type CL_mem_info CL_uint
 type CL_mem_migration_flags CL_bitfield

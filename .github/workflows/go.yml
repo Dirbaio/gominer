@@ -1,0 +1,31 @@
+name: Build and Test
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Go CI
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        go: ['1.20', '1.21']
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@93397bea11091df50f3d7e59dc26a7711a8bcfbe #v4.1.0
+        with:
+          go-version: ${{ matrix.go }}
+      - name: Check out source
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac #v4.0.0
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nvidia-cuda-dev nvidia-cuda-toolkit ocl-icd-opencl-dev opencl-headers nvidia-opencl-dev
+      - name: Install Linters
+        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.54.2
+      - name: Build OpenCL
+        env:
+          CL_TARGET_OPENCL_VERSION: "220"
+        run: go build -tags opencl ./...
+      - name: Test and Lint
+        run: ./run_tests.sh
